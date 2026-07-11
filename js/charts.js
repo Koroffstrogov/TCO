@@ -136,6 +136,64 @@
     container.setAttribute('aria-label', 'Évolution annuelle du TCO net pour ' + results.map(function (r) { return r.name; }).join(', '));
   }
 
+  function renderResidualValueChart(container, allResults) {
+    const results = (allResults || []).filter(function (result) { return result.includeInCharts; });
+    const width = 900;
+    const height = 410;
+    const svg = setup(container, width, height, results.length ? '' : 'Aucun scénario inclus');
+    if (!results.length) return;
+    const left = 74;
+    const right = 25;
+    const top = 30;
+    const bottom = 80;
+    const values = [];
+    results.forEach(function (result) {
+      values.push(result.assietteValeur);
+      result.seriesAnnuelles.forEach(function (point) { values.push(point.valeurResiduelle); });
+    });
+    const domainMax = Math.max(1, Math.max.apply(null, values)) * 1.08;
+    const maxYears = Math.max.apply(null, results.map(function (result) { return result.seriesAnnuelles.length; }));
+    const x = function (year) { return left + (year / Math.max(1, maxYears)) * (width - left - right); };
+    const y = function (value) { return top + ((domainMax - Math.max(0, value)) / domainMax) * (height - top - bottom); };
+
+    for (let tick = 0; tick <= 4; tick += 1) {
+      const value = domainMax * tick / 4;
+      const tickY = y(value);
+      svg.appendChild(svgElement('line', { x1: left, y1: tickY, x2: width - right, y2: tickY, class: 'chart-grid' }));
+      svg.appendChild(svgElement('text', { x: left - 10, y: tickY + 4, 'text-anchor': 'end', class: 'chart-tick' }, money(value)));
+    }
+    for (let year = 0; year <= maxYears; year += 1) {
+      svg.appendChild(svgElement('text', { x: x(year), y: height - bottom + 24, 'text-anchor': 'middle', class: 'chart-tick' }, String(year)));
+    }
+    svg.appendChild(svgElement('text', { x: (left + width - right) / 2, y: height - 30, 'text-anchor': 'middle', class: 'chart-note' }, 'Année de possession'));
+
+    results.forEach(function (result, index) {
+      const points = [{ year: 0, valeurResiduelle: result.assietteValeur, age: result.ageAchat }].concat(result.seriesAnnuelles);
+      const path = points.map(function (point, pointIndex) {
+        return (pointIndex ? 'L' : 'M') + x(point.year) + ' ' + y(point.valeurResiduelle);
+      }).join(' ');
+      svg.appendChild(svgElement('path', {
+        d: path, fill: 'none', stroke: COLORS[index % COLORS.length],
+        'stroke-width': 3, 'stroke-linejoin': 'round', 'stroke-linecap': 'round'
+      }));
+      points.forEach(function (point) {
+        const circle = svgElement('circle', {
+          cx: x(point.year), cy: y(point.valeurResiduelle), r: 4,
+          fill: COLORS[index % COLORS.length]
+        });
+        const ageLabel = point.age === null || point.age === undefined ? '' : ' · âge ' + point.age + ' ans';
+        circle.appendChild(svgElement('title', {}, result.name + ' · an ' + point.year + ageLabel + ' : ' + money(point.valeurResiduelle)));
+        svg.appendChild(circle);
+      });
+      const legendX = left + index * Math.min(220, (width - left - right) / Math.max(1, results.length));
+      svg.appendChild(svgElement('line', { x1: legendX, y1: height - 8, x2: legendX + 22, y2: height - 8, stroke: COLORS[index % COLORS.length], 'stroke-width': 4 }));
+      svg.appendChild(svgElement('text', { x: legendX + 28, y: height - 4, class: 'chart-label' }, shortName(result.name, 24)));
+    });
+    container.setAttribute('aria-label', 'Valeur résiduelle à l’horizon : ' + results.map(function (result) {
+      return result.name + ', ' + money(result.valeurResiduelle);
+    }).join(' ; '));
+  }
+
   function renderCostBreakdownChart(container, allResults) {
     const results = (allResults || []).filter(function (result) { return result.includeInCharts; });
     const width = 900;
@@ -189,6 +247,7 @@
   TCO.charts = {
     renderTcoBarChart: renderTcoBarChart,
     renderCumulativeTcoChart: renderCumulativeTcoChart,
+    renderResidualValueChart: renderResidualValueChart,
     renderCostBreakdownChart: renderCostBreakdownChart
   };
 }(window.TCO = window.TCO || {}));

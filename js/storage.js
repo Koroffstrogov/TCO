@@ -50,14 +50,10 @@
           const number = Number(rate);
           return Number.isFinite(number) ? Math.min(1, Math.max(0, number)) : 0;
         });
-        const reference = Number(copy.kilometrageReferenceAnnuel);
-        const sensitivity = Number(copy.sensibiliteKilometrage);
-        copy.kilometrageReferenceAnnuel = Number.isFinite(reference) ? Math.max(0, reference) : 0;
-        copy.sensibiliteKilometrage = Number.isFinite(sensitivity) ? Math.max(0, sensitivity) : 0;
-        copy.ageFactors = new Array(11).fill(1).map(function (_, index) {
-          const factor = Number(Array.isArray(profile.ageFactors) ? profile.ageFactors[index] : 1);
-          return Number.isFinite(factor) && factor >= 0 ? factor : 1;
-        });
+        // Les anciens réglages avancés V3 sont volontairement retirés du profil.
+        delete copy.kilometrageReferenceAnnuel;
+        delete copy.sensibiliteKilometrage;
+        delete copy.ageFactors;
         return copy;
       })
       : defaults.depreciationProfiles;
@@ -140,7 +136,11 @@
       scenarios: read(KEYS.scenarios, null),
       depreciationProfiles: read(KEYS.profiles, null)
     };
-    if (current.settings || current.scenarios || current.depreciationProfiles) return normalizeState(current);
+    if (current.settings || current.scenarios || current.depreciationProfiles) {
+      const normalized = normalizeState(current);
+      saveState(normalized);
+      return normalized;
+    }
     const v2 = {
       version: 2,
       settings: read(V2_KEYS.settings, null),

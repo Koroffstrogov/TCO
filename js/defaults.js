@@ -2,7 +2,6 @@
   'use strict';
 
   const CURRENT_YEAR = new Date().getFullYear();
-  const NEUTRAL_AGE_FACTORS = Object.freeze(new Array(11).fill(1));
 
   const DEFAULT_SETTINGS = Object.freeze({
     horizonKpi: 5,
@@ -78,10 +77,7 @@
       key: row[0] + '|' + row[1],
       type: row[0],
       level: row[1],
-      rates: Object.freeze(row[2].map(function (rate) { return rate / 100; })),
-      kilometrageReferenceAnnuel: 0,
-      sensibiliteKilometrage: 0,
-      ageFactors: NEUTRAL_AGE_FACTORS
+      rates: Object.freeze(row[2].map(function (rate) { return rate / 100; }))
     });
   }));
 
@@ -102,7 +98,6 @@
     DEFAULT_SETTINGS: DEFAULT_SETTINGS,
     DEFAULT_SCENARIOS: DEFAULT_SCENARIOS,
     DEFAULT_DEPRECIATION_PROFILES: DEFAULT_DEPRECIATION_PROFILES,
-    NEUTRAL_AGE_FACTORS: NEUTRAL_AGE_FACTORS,
     createDefaultState: createDefaultState,
     clone: clone
   };
