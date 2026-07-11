@@ -1,0 +1,425 @@
+(function (TCO) {
+  'use strict';
+
+  const SETTINGS_GROUPS = [
+    { title: 'Horizon et kilométrage', fields: [
+      ['horizonKpi', 'Horizon KPI', 'années', 'integer'],
+      ['horizonAnalyseRecommande', "Horizon d'analyse recommandé", 'années', 'integer'],
+      ['kilometrageTotalAnnuel', 'Kilométrage total annuel', 'km/an'],
+      ['kilometrageProRembourseIk', 'Kilométrage pro remboursé IK', 'km/an']
+    ]},
+    { title: "Prix d'achat", fields: [
+      ['prixNetDepartElec', 'Prix net départ élec', '€'],
+      ['prixNetDepartThermique', 'Prix net départ thermique', '€']
+    ]},
+    { title: 'Énergie', fields: [
+      ['prixEssence', 'Prix essence', '€/L'],
+      ['prixElectricite', 'Prix électricité', '€/kWh']
+    ]},
+    { title: 'Indemnités kilométriques', fields: [
+      ['baremeIkActuel', 'Barème IK actuel', '€/km'],
+      ['majorationVehiculeElectrique', 'Majoration véhicule électrique', '%', 'percent'],
+      ['coefficientPrudenceIk', 'Coefficient de prudence IK', 'coefficient'],
+      ['ikActuellesAnnuelles', 'IK actuelles annuelles', '€/an'],
+      ['bonusIkElectriqueRetenu', 'Bonus IK électrique retenu', '€/an']
+    ]},
+    { title: 'Frais et fiscalité', fields: [
+      ['taxeImmatriculation', "Taxe d'immatriculation", '€'],
+      ['fraisAchatThermiqueOccasion', 'Frais achat thermique occasion', '€'],
+      ['fraisAchatElectriqueOccasion', 'Frais achat électrique occasion', '€'],
+      ['fraisAchatElectriqueNeuve', 'Frais achat électrique neuve', '€']
+    ]},
+    { title: 'Entretien, pneus et assurance', fields: [
+      ['entretienThermiqueStandard', 'Entretien thermique standard', '€/an'],
+      ['entretienElectriqueStandard', 'Entretien électrique standard', '€/an'],
+      ['pneusThermiqueStandard', 'Pneus thermique standard', '€/an'],
+      ['pneusModelYStandard', 'Pneus Model Y standard', '€/an'],
+      ['assuranceThermiqueStandard', 'Assurance thermique standard', '€/an'],
+      ['assuranceElectriqueStandard', 'Assurance électrique standard', '€/an']
+    ]},
+    { title: 'Aides et remises', fields: [
+      ['aideVeNeuveEligible', 'Aide VE neuve éligible', '€'],
+      ['surbonusRemiseComplementaire', 'Surbonus / remise complémentaire', '€']
+    ]}
+  ];
+
+  function escapeHtml(value) {
+    return String(value === undefined || value === null ? '' : value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+  }
+
+  function uid(prefix) {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') return prefix + '_' + window.crypto.randomUUID();
+    return prefix + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+  }
+
+  function formatCurrency(value, digits) {
+    return new Intl.NumberFormat('fr-FR', {
+      style: 'currency', currency: 'EUR', maximumFractionDigits: digits === undefined ? 0 : digits
+    }).format(Number(value) || 0);
+  }
+
+  function formatNumber(value, digits) {
+    return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: digits === undefined ? 2 : digits }).format(Number(value) || 0);
+  }
+
+  function initialInputValue(value, type) {
+    if (type === 'percent') return TCO.depreciation.formatRate(Number(value) || 0);
+    return String(value === undefined || value === null ? 0 : value).replace('.', ',');
+  }
+
+  function initUi(options) {
+    let state = options.state;
+    const onChange = options.onChange;
+    const settingsForm = document.getElementById('settings-form');
+    const scenariosList = document.getElementById('scenarios-list');
+    const editor = document.getElementById('depreciation-editor');
+    const defaultProfileKeys = new Set(TCO.defaults.DEFAULT_DEPRECIATION_PROFILES.map(function (profile) { return profile.key; }));
+
+    function setState(nextState) { state = nextState; }
+
+    function showMessage(text, type) {
+      const message = document.getElementById('app-message');
+      message.textContent = text;
+      message.className = 'message ' + (type || '');
+      message.hidden = false;
+      window.clearTimeout(showMessage.timer);
+      showMessage.timer = window.setTimeout(function () { message.hidden = true; }, 5000);
+    }
+
+    function renderSettings() {
+      settingsForm.innerHTML = SETTINGS_GROUPS.map(function (group, groupIndex) {
+        const fields = group.fields.map(function (field) {
+          const key = field[0];
+          const label = field[1];
+          const unit = field[2];
+          const type = field[3] || 'number';
+          const id = 'setting-' + key;
+          return '<div class="field">' +
+            '<label for="' + id + '">' + escapeHtml(label) + '</label>' +
+            '<div class="input-wrap"><input id="' + id + '" type="text" inputmode="decimal" ' +
+              'data-setting="' + key + '" data-value-type="' + type + '" value="' +
+              escapeHtml(initialInputValue(state.settings[key], type)) + '" aria-describedby="error-' + key + '">' +
+              '<span class="unit">' + escapeHtml(unit) + '</span></div>' +
+            '<p id="error-' + key + '" class="field-error" aria-live="polite"></p></div>';
+        }).join('');
+        return '<fieldset class="settings-group"><legend>' + escapeHtml(group.title) +
+          '</legend><div class="form-grid" data-group="' + groupIndex + '">' + fields + '</div></fieldset>';
+      }).join('');
+    }
+
+    function validateSetting(input, parsed, type) {
+      const error = document.getElementById('error-' + input.dataset.setting);
+      let message = '';
+      if (!Number.isFinite(parsed)) message = 'Saisissez un nombre valide.';
+      else if (parsed < 0) message = 'La valeur doit être positive ou nulle.';
+      else if (type === 'percent' && parsed > 1) message = 'Le pourcentage doit être compris entre 0 et 100 %.';
+      else if (input.dataset.setting === 'horizonKpi' && (parsed < 1 || parsed > 10 || !Number.isInteger(parsed))) {
+        message = "L'horizon KPI doit être un entier de 1 à 10 ans.";
+      } else if (type === 'integer' && !Number.isInteger(parsed)) message = 'Saisissez un nombre entier.';
+      input.setAttribute('aria-invalid', message ? 'true' : 'false');
+      error.textContent = message;
+      return !message;
+    }
+
+    settingsForm.addEventListener('input', function (event) {
+      const input = event.target.closest('[data-setting]');
+      if (!input) return;
+      const type = input.dataset.valueType;
+      const parsed = input.value.trim() === '' ? 0 :
+        (type === 'percent' ? TCO.depreciation.normalizeRate(input.value) : TCO.depreciation.parseFrenchNumber(input.value));
+      validateSetting(input, parsed, type);
+      state.settings[input.dataset.setting] = Number.isFinite(parsed) ? parsed : 0;
+      onChange();
+    });
+
+    settingsForm.addEventListener('blur', function (event) {
+      const input = event.target.closest('[data-setting]');
+      if (!input || input.getAttribute('aria-invalid') === 'true') return;
+      if (input.dataset.valueType === 'percent') input.value = TCO.depreciation.formatRate(state.settings[input.dataset.setting]);
+    }, true);
+
+    function getProfileTypes() {
+      return Array.from(new Set(state.depreciationProfiles.map(function (profile) { return profile.type; })));
+    }
+
+    function levelsFor(type) {
+      return state.depreciationProfiles.filter(function (profile) { return profile.type === type; })
+        .map(function (profile) { return profile.level; });
+    }
+
+    function optionList(values, selected) {
+      const list = values.slice();
+      if (selected && list.indexOf(selected) < 0) list.unshift(selected);
+      return list.map(function (value) {
+        return '<option value="' + escapeHtml(value) + '"' + (value === selected ? ' selected' : '') + '>' + escapeHtml(value) + '</option>';
+      }).join('');
+    }
+
+    function scenarioField(id, field, label, content) {
+      return '<div class="field"><label for="' + id + '">' + label + '</label>' + content + '</div>';
+    }
+
+    function renderScenarios() {
+      const types = getProfileTypes();
+      scenariosList.innerHTML = state.scenarios.map(function (scenario) {
+        const id = escapeHtml(scenario.id);
+        const isElectric = scenario.energyType === 'electric';
+        const levels = levelsFor(scenario.depreciationType);
+        const consumptionField = isElectric ? 'consoElectriqueKwh100' : 'consoThermiqueL100';
+        const consumptionLabel = isElectric ? 'Consommation électrique' : 'Consommation thermique';
+        const consumptionUnit = isElectric ? 'kWh/100 km' : 'L/100 km';
+        return '<article class="scenario-card ' + (isElectric ? 'electric' : 'thermal') + '" data-scenario-card="' + id + '">' +
+          '<div class="scenario-card-header"><strong>' + escapeHtml(scenario.name || 'Sans nom') + '</strong>' +
+          '<div class="scenario-actions"><button class="button icon" type="button" data-scenario-action="duplicate" data-scenario-id="' + id + '">Dupliquer</button>' +
+          '<button class="button icon danger-ghost" type="button" data-scenario-action="delete" data-scenario-id="' + id + '"' + (state.scenarios.length === 1 ? ' disabled' : '') + '>Supprimer</button></div></div>' +
+          '<div class="scenario-fields">' +
+          scenarioField('name-' + id, 'name', 'Nom du scénario', '<input id="name-' + id + '" type="text" data-scenario-id="' + id + '" data-scenario-field="name" value="' + escapeHtml(scenario.name) + '">') +
+          scenarioField('energy-' + id, 'energyType', "Type d'énergie", '<select id="energy-' + id + '" data-scenario-id="' + id + '" data-scenario-field="energyType"><option value="thermal"' + (scenario.energyType === 'thermal' ? ' selected' : '') + '>Thermique</option><option value="electric"' + (isElectric ? ' selected' : '') + '>Électrique</option></select>') +
+          scenarioField('status-' + id, 'acquisitionStatus', 'Statut', '<select id="status-' + id + '" data-scenario-id="' + id + '" data-scenario-field="acquisitionStatus"><option value="used"' + (scenario.acquisitionStatus === 'used' ? ' selected' : '') + '>Occasion</option><option value="new"' + (scenario.acquisitionStatus === 'new' ? ' selected' : '') + '>Neuf</option></select>') +
+          scenarioField('type-' + id, 'depreciationType', 'Profil de décote', '<select id="type-' + id + '" data-scenario-id="' + id + '" data-scenario-field="depreciationType">' + optionList(types, scenario.depreciationType) + '</select>') +
+          scenarioField('level-' + id, 'depreciationLevel', 'Niveau de décote', '<select id="level-' + id + '" data-scenario-id="' + id + '" data-scenario-field="depreciationLevel">' + optionList(levels, scenario.depreciationLevel) + '</select>') +
+          scenarioField('consumption-' + id, consumptionField, consumptionLabel, '<div class="input-wrap"><input id="consumption-' + id + '" type="text" inputmode="decimal" aria-describedby="scenario-error-' + id + '" data-scenario-id="' + id + '" data-scenario-field="' + consumptionField + '" value="' + escapeHtml(String(scenario[consumptionField] || 0).replace('.', ',')) + '"><span class="unit">' + consumptionUnit + '</span></div><p id="scenario-error-' + id + '" class="field-error" aria-live="polite"></p>') +
+          '<label class="check-field"><input type="checkbox" data-scenario-id="' + id + '" data-scenario-field="includeInCharts"' + (scenario.includeInCharts !== false ? ' checked' : '') + '> Inclure dans les graphiques</label>' +
+          '</div></article>';
+      }).join('');
+    }
+
+    scenariosList.addEventListener('input', handleScenarioField);
+    scenariosList.addEventListener('change', handleScenarioField);
+    function handleScenarioField(event) {
+      const input = event.target.closest('[data-scenario-field]');
+      if (!input) return;
+      const scenario = state.scenarios.find(function (item) { return item.id === input.dataset.scenarioId; });
+      if (!scenario) return;
+      const field = input.dataset.scenarioField;
+      if (field === 'includeInCharts') scenario[field] = input.checked;
+      else if (field.indexOf('conso') === 0) {
+        const parsed = input.value.trim() === '' ? 0 : TCO.depreciation.parseFrenchNumber(input.value);
+        const valid = Number.isFinite(parsed) && parsed >= 0;
+        input.setAttribute('aria-invalid', valid ? 'false' : 'true');
+        const error = document.getElementById('scenario-error-' + input.dataset.scenarioId);
+        if (error) error.textContent = valid ? '' : 'La consommation doit être un nombre positif ou nul.';
+        scenario[field] = Number.isFinite(parsed) ? parsed : 0;
+      } else scenario[field] = input.value;
+
+      if (field === 'depreciationType') {
+        const levels = levelsFor(scenario.depreciationType);
+        if (levels.indexOf(scenario.depreciationLevel) < 0) scenario.depreciationLevel = levels[0] || '';
+      }
+      if (event.type === 'change' && ['energyType', 'depreciationType'].indexOf(field) >= 0) renderScenarios();
+      onChange();
+    }
+
+    scenariosList.addEventListener('click', function (event) {
+      const button = event.target.closest('[data-scenario-action]');
+      if (!button) return;
+      const index = state.scenarios.findIndex(function (item) { return item.id === button.dataset.scenarioId; });
+      if (index < 0) return;
+      if (button.dataset.scenarioAction === 'duplicate') {
+        const copy = TCO.defaults.clone(state.scenarios[index]);
+        copy.id = uid('scenario');
+        copy.name += ' — copie';
+        state.scenarios.splice(index + 1, 0, copy);
+      } else if (button.dataset.scenarioAction === 'delete' && state.scenarios.length > 1) {
+        state.scenarios.splice(index, 1);
+      }
+      renderScenarios();
+      onChange();
+    });
+
+    document.getElementById('add-scenario-button').addEventListener('click', function () {
+      const firstProfile = state.depreciationProfiles[0] || { type: '', level: '' };
+      state.scenarios.push({
+        id: uid('scenario'), name: 'Nouveau scénario', energyType: 'electric', acquisitionStatus: 'used',
+        depreciationType: firstProfile.type, depreciationLevel: firstProfile.level,
+        consoThermiqueL100: 0, consoElectriqueKwh100: 0, includeInCharts: true
+      });
+      renderScenarios();
+      onChange();
+    });
+
+    function renderProfiles() {
+      const headerYears = new Array(10).fill(0).map(function (_, index) { return '<th scope="col">An ' + (index + 1) + '</th>'; }).join('');
+      const rows = state.depreciationProfiles.map(function (profile) {
+        const isDefault = defaultProfileKeys.has(profile.key);
+        const rates = profile.rates.map(function (rate, index) {
+          return '<td><input type="text" inputmode="decimal" aria-label="' + escapeHtml(profile.key) + ', année ' + (index + 1) + '" data-profile-key="' + escapeHtml(profile.key) + '" data-rate-index="' + index + '" value="' + escapeHtml(TCO.depreciation.formatRate(rate)) + '"><span class="rate-error" aria-live="polite"></span></td>';
+        }).join('');
+        return '<tr><td><strong>' + escapeHtml(profile.key) + '</strong><span class="profile-meta">' + (isDefault ? 'Profil par défaut modifiable' : 'Profil utilisateur') + '</span></td>' +
+          '<td>' + escapeHtml(profile.type) + '</td><td>' + escapeHtml(profile.level) + '</td>' + rates +
+          '<td><div class="profile-actions"><button type="button" class="button icon" data-profile-action="duplicate" data-profile-key="' + escapeHtml(profile.key) + '">Dupliquer</button>' +
+          '<button type="button" class="button icon danger-ghost" data-profile-action="delete" data-profile-key="' + escapeHtml(profile.key) + '"' + (isDefault ? ' disabled title="Dupliquez ce profil pour créer une version supprimable."' : '') + '>Supprimer</button></div></td></tr>';
+      }).join('');
+      editor.innerHTML = '<table><thead><tr><th scope="col">Clé</th><th scope="col">Type de décote</th><th scope="col">Niveau</th>' + headerYears + '<th scope="col">Actions</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    }
+
+    editor.addEventListener('input', function (event) {
+      const input = event.target.closest('[data-rate-index]');
+      if (!input) return;
+      const profile = state.depreciationProfiles.find(function (item) { return item.key === input.dataset.profileKey; });
+      if (!profile) return;
+      const rate = input.value.trim() === '' ? 0 : TCO.depreciation.normalizeRate(input.value);
+      const valid = Number.isFinite(rate) && rate >= 0 && rate <= 1;
+      input.setAttribute('aria-invalid', valid ? 'false' : 'true');
+      input.title = valid ? '' : 'Taux attendu entre 0 et 100 %.';
+      const error = input.nextElementSibling;
+      if (error) error.textContent = valid ? '' : '0 à 100 %';
+      if (valid) profile.rates[Number(input.dataset.rateIndex)] = rate;
+      onChange();
+    });
+    editor.addEventListener('blur', function (event) {
+      const input = event.target.closest('[data-rate-index]');
+      if (!input || input.getAttribute('aria-invalid') === 'true') return;
+      const profile = state.depreciationProfiles.find(function (item) { return item.key === input.dataset.profileKey; });
+      input.value = TCO.depreciation.formatRate(profile.rates[Number(input.dataset.rateIndex)]);
+    }, true);
+
+    function uniqueProfile(type, level, ignoredKey) {
+      return !state.depreciationProfiles.some(function (profile) {
+        return profile.key !== ignoredKey && profile.type === type && profile.level === level;
+      });
+    }
+
+    function askProfile(seed) {
+      const type = window.prompt('Nom du type de décote :', seed ? seed.type : 'Mon profil');
+      if (type === null || !type.trim()) return null;
+      const level = window.prompt('Nom du niveau :', seed ? seed.level + ' copie' : 'Central');
+      if (level === null || !level.trim()) return null;
+      const cleanType = type.trim();
+      const cleanLevel = level.trim();
+      if (!uniqueProfile(cleanType, cleanLevel)) {
+        showMessage('Un profil avec ce type et ce niveau existe déjà.', 'error');
+        return null;
+      }
+      return {
+        key: cleanType + '|' + cleanLevel, type: cleanType, level: cleanLevel,
+        rates: seed ? seed.rates.slice() : new Array(10).fill(0)
+      };
+    }
+
+    document.getElementById('add-profile-button').addEventListener('click', function () {
+      const profile = askProfile(null);
+      if (!profile) return;
+      state.depreciationProfiles.push(profile);
+      renderProfiles();
+      renderScenarios();
+      onChange();
+    });
+
+    editor.addEventListener('click', function (event) {
+      const button = event.target.closest('[data-profile-action]');
+      if (!button) return;
+      const index = state.depreciationProfiles.findIndex(function (profile) { return profile.key === button.dataset.profileKey; });
+      if (index < 0) return;
+      if (button.dataset.profileAction === 'duplicate') {
+        const copy = askProfile(state.depreciationProfiles[index]);
+        if (!copy) return;
+        state.depreciationProfiles.splice(index + 1, 0, copy);
+      } else if (button.dataset.profileAction === 'delete' && !defaultProfileKeys.has(button.dataset.profileKey)) {
+        const removed = state.depreciationProfiles[index];
+        state.depreciationProfiles.splice(index, 1);
+        const replacement = state.depreciationProfiles[0];
+        state.scenarios.forEach(function (scenario) {
+          if (scenario.depreciationType === removed.type && scenario.depreciationLevel === removed.level && replacement) {
+            scenario.depreciationType = replacement.type;
+            scenario.depreciationLevel = replacement.level;
+          }
+        });
+      }
+      renderProfiles();
+      renderScenarios();
+      onChange();
+    });
+
+    document.getElementById('restore-profiles-button').addEventListener('click', function () {
+      if (!window.confirm('Restaurer les 12 profils et leurs taux par défaut ? Les profils utilisateur seront supprimés.')) return;
+      state.depreciationProfiles = TCO.defaults.clone(TCO.defaults.DEFAULT_DEPRECIATION_PROFILES);
+      state.scenarios.forEach(function (scenario) {
+        if (!TCO.depreciation.getProfile(state.depreciationProfiles, scenario.depreciationType, scenario.depreciationLevel)) {
+          const fallback = state.depreciationProfiles[0];
+          scenario.depreciationType = fallback.type;
+          scenario.depreciationLevel = fallback.level;
+        }
+      });
+      renderProfiles();
+      renderScenarios();
+      showMessage('Profils de décote restaurés.', 'success');
+      onChange();
+    });
+
+    function renderIndicators() {
+      const ik = TCO.calculations.calculateIkIndicators(state.settings);
+      document.getElementById('ik-indicators').innerHTML =
+        '<div class="indicator"><span>IK indicative annuelle</span><strong>' + formatCurrency(ik.ikIndicativeAnnuelle, 2) + '</strong></div>' +
+        '<div class="indicator"><span>Bonus électrique indicatif</span><strong>' + formatCurrency(ik.bonusIkElectriqueIndicatif, 2) + '</strong></div>';
+    }
+
+    function renderSummary(results) {
+      const included = results.filter(function (result) { return result.includeInCharts; });
+      const best = included.length ? included.reduce(function (lowest, current) {
+        return current.tcoNetApresIk < lowest.tcoNetApresIk ? current : lowest;
+      }) : null;
+      const cards = [];
+      cards.push('<article class="summary-card best"><p class="summary-label">Scénario le moins coûteux</p><p class="summary-value">' +
+        escapeHtml(best ? best.name : 'Aucun scénario inclus') + '</p><p class="summary-detail">' +
+        (best ? formatCurrency(best.tcoNetApresIk) + ' net après IK' : 'Activez un scénario pour comparer') + '</p></article>');
+      results.forEach(function (result) {
+        const deltaClass = result.ecartVsReference < 0 ? 'negative' : (result.ecartVsReference > 0 ? 'positive' : '');
+        cards.push('<article class="summary-card"><p class="summary-label">' + escapeHtml(result.name) + (result.includeInCharts ? '' : ' · exclu') +
+          '</p><p class="summary-value">' + formatCurrency(result.tcoNetApresIk) + '</p><p class="summary-detail ' + deltaClass + '">' +
+          (result.ecartVsReference === 0 ? 'Scénario de référence' : ((result.ecartVsReference > 0 ? '+' : '') + formatCurrency(result.ecartVsReference) + ' vs référence')) +
+          ' · ' + formatCurrency(result.coutAnnuelMoyen) + '/an · ' +
+          (result.coutParKm === null ? '— €/km' : formatCurrency(result.coutParKm, 2) + '/km') + '</p></article>');
+      });
+      document.getElementById('summary-cards').innerHTML = cards.join('');
+      document.getElementById('horizon-note').textContent = 'Horizon KPI : ' + TCO.calculations.getHorizon(state.settings) + ' an(s) · repère recommandé : ' + Math.max(0, Math.trunc(Number(state.settings.horizonAnalyseRecommande) || 0)) + ' an(s)';
+    }
+
+    function renderResultsTable(results) {
+      const rows = results.map(function (result) {
+        return '<tr><td>' + escapeHtml(result.name) + (result.profileFound ? '' : ' ⚠ profil absent') + '</td>' +
+          '<td>' + formatCurrency(result.tcoNetApresIk) + '</td><td>' + formatCurrency(result.tcoBrut) + '</td>' +
+          '<td>' + formatCurrency(result.coutAcquisitionNet) + '</td><td>' + formatCurrency(result.valeurResiduelle) + '</td>' +
+          '<td>' + formatCurrency(result.coutDecote) + '</td><td>' + formatCurrency(result.coutEnergieCumule) + '</td>' +
+          '<td>' + formatCurrency(result.entretienCumule) + '</td><td>' + formatCurrency(result.pneusCumule) + '</td>' +
+          '<td>' + formatCurrency(result.assuranceCumule) + '</td><td>' + formatCurrency(result.fraisAchat + result.taxes) + '</td>' +
+          '<td>− ' + formatCurrency(result.ikRetenueCumulee) + '</td><td>' + formatCurrency(result.coutAnnuelMoyen) + '</td>' +
+          '<td>' + (result.coutParKm === null ? '—' : formatNumber(result.coutParKm, 3) + ' €/km') + '</td></tr>';
+      }).join('');
+      document.getElementById('results-table').innerHTML = '<table><thead><tr><th scope="col">Scénario</th><th scope="col">TCO net</th><th scope="col">TCO brut</th><th scope="col">Acquisition nette</th><th scope="col">Valeur résiduelle</th><th scope="col">Décote</th><th scope="col">Énergie</th><th scope="col">Entretien</th><th scope="col">Pneus</th><th scope="col">Assurance</th><th scope="col">Frais + taxes</th><th scope="col">IK retenues</th><th scope="col">Moyenne/an</th><th scope="col">Coût/km</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    }
+
+    function renderDynamic(results) {
+      renderIndicators();
+      renderSummary(results);
+      renderResultsTable(results);
+      TCO.charts.renderTcoBarChart(document.getElementById('tco-bar-chart'), results);
+      TCO.charts.renderCumulativeTcoChart(document.getElementById('cumulative-chart'), results);
+      TCO.charts.renderCostBreakdownChart(document.getElementById('breakdown-chart'), results);
+    }
+
+    function renderAll(results) {
+      renderSettings();
+      renderScenarios();
+      renderProfiles();
+      renderDynamic(results);
+    }
+
+    return {
+      setState: setState,
+      renderAll: renderAll,
+      renderDynamic: renderDynamic,
+      renderScenarios: renderScenarios,
+      renderProfiles: renderProfiles,
+      showMessage: showMessage
+    };
+  }
+
+  TCO.ui = {
+    initUi: initUi,
+    formatCurrency: formatCurrency,
+    formatNumber: formatNumber
+  };
+}(window.TCO = window.TCO || {}));
