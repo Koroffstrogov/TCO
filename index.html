@@ -52,6 +52,7 @@
           <span class="effect-badge effect-down">↓ TCO</span><span>montant qui réduit le TCO</span>
           <span class="effect-badge effect-used">Calcul</span><span>utilisé, effet variable</span>
           <span class="effect-badge effect-indicative">Indicatif</span><span>repère non injecté dans le TCO</span>
+          <span class="effect-badge effect-projection">Projection</span><span>sert au suivi, sans pénalité initiale</span>
           <span class="effect-badge effect-display">Hors TCO</span><span>description ou affichage seulement</span>
         </div>
         <div id="ik-indicators" class="indicator-strip" aria-live="polite"></div>
@@ -97,7 +98,7 @@
     <section class="panel" aria-labelledby="depreciation-title">
       <div class="section-heading wrap">
         <div>
-          <p class="eyebrow">Taux annuels cumulés mécaniquement</p>
+          <p class="eyebrow">Taux indexés sur l’âge réel du véhicule</p>
           <h2 id="depreciation-title">Profils de décote sur 10 ans</h2>
         </div>
         <div class="button-row">
@@ -105,8 +106,8 @@
           <button id="restore-profiles-button" class="button small" type="button">Restaurer les profils par défaut</button>
         </div>
       </div>
-      <p class="section-help">Saisissez par exemple <code>12</code>, <code>12%</code>, <code>12,5%</code> ou <code>0.125</code>. Les modifications sont utilisées immédiatement.</p>
-      <div id="depreciation-editor" class="table-wrap depreciation-wrap"></div>
+      <p class="section-help">Saisissez par exemple <code>12</code>, <code>12%</code>, <code>12,5%</code> ou <code>0.125</code>. Les colonnes correspondent à l’âge du véhicule : une occasion âgée de 5 ans commence au taux « Âge 6 ». Au-delà de 10 ans, le taux « Âge 10 » est répété.</p>
+      <div id="depreciation-editor" class="depreciation-wrap"></div>
     </section>
   </main>
 

@@ -24,6 +24,7 @@
     down: '↓ TCO',
     used: 'Calcul',
     indicative: 'Indicatif',
+    projection: 'Projection',
     display: 'Hors TCO'
   };
 
@@ -31,8 +32,10 @@
     'prixAchatNet', 'taxeImmatriculation', 'fraisAchat', 'aideAchat',
     'remiseComplementaire', 'entretienAnnuel', 'pneusAnnuel',
     'assuranceAnnuelle', 'ikAnnuelleRetenue', 'consoThermiqueL100',
-    'consoElectriqueKwh100'
+    'consoElectriqueKwh100', 'anneeMiseEnCirculation', 'kilometrageAchat',
+    'kilometrageAnnuelOverride'
   ]);
+  const SCENARIO_NULLABLE_FIELDS = new Set(['anneeMiseEnCirculation', 'kilometrageAnnuelOverride']);
 
   function escapeHtml(value) {
     return String(value === undefined || value === null ? '' : value)
@@ -161,7 +164,7 @@
         label + '</span>' + effectBadge(classification) + '</label>' + content + '</div>';
     }
 
-    function scenarioNumberField(scenario, field, label, unit, effect) {
+    function scenarioNumberField(scenario, field, label, unit, effect, help) {
       const safeId = escapeHtml(scenario.id);
       const inputId = field + '-' + safeId;
       const errorId = 'scenario-error-' + safeId + '-' + field;
@@ -170,7 +173,8 @@
         '<div class="input-wrap"><input id="' + inputId + '" type="text" inputmode="decimal" ' +
         'aria-describedby="' + errorId + '" data-scenario-id="' + safeId + '" data-scenario-field="' + field +
         '" data-scenario-number="true" value="' + escapeHtml(value) + '"><span class="unit">' +
-        escapeHtml(unit) + '</span></div><p id="' + errorId + '" class="field-error" aria-live="polite"></p>', effect);
+        escapeHtml(unit) + '</span></div><p id="' + errorId + '" class="field-error' + (help ? ' field-help' : '') + '" aria-live="polite">' +
+        escapeHtml(help || '') + '</p>', effect);
     }
 
     function renderScenarios() {
@@ -190,6 +194,11 @@
           scenarioField('name-' + id, 'name', 'Nom du scénario', '<input id="name-' + id + '" type="text" data-scenario-id="' + id + '" data-scenario-field="name" value="' + escapeHtml(scenario.name) + '">', 'display') +
           scenarioField('energy-' + id, 'energyType', "Type d'énergie", '<select id="energy-' + id + '" data-scenario-id="' + id + '" data-scenario-field="energyType"><option value="thermal"' + (scenario.energyType === 'thermal' ? ' selected' : '') + '>Thermique</option><option value="electric"' + (isElectric ? ' selected' : '') + '>Électrique</option></select>', 'used') +
           scenarioField('status-' + id, 'acquisitionStatus', 'Statut', '<select id="status-' + id + '" data-scenario-id="' + id + '" data-scenario-field="acquisitionStatus"><option value="used"' + (scenario.acquisitionStatus === 'used' ? ' selected' : '') + '>Occasion</option><option value="new"' + (scenario.acquisitionStatus === 'new' ? ' selected' : '') + '>Neuf</option></select>', 'display') +
+          scenarioNumberField(scenario, 'anneeMiseEnCirculation', 'Année de mise en circulation', 'année', 'used',
+            scenario.acquisitionStatus === 'used' && scenario.anneeMiseEnCirculation === null
+              ? 'Année manquante : coefficient d’âge neutre.' : '') +
+          scenarioNumberField(scenario, 'kilometrageAchat', 'Kilométrage à l’achat', 'km', 'projection', 'Déjà intégré au prix : aucune pénalité initiale.') +
+          scenarioNumberField(scenario, 'kilometrageAnnuelOverride', 'Kilométrage annuel du scénario', 'km/an', 'used', 'Vide : utilise l’hypothèse commune.') +
           scenarioNumberField(scenario, 'prixAchatNet', "Prix d'achat net", '€', 'up') +
           scenarioNumberField(scenario, 'taxeImmatriculation', "Taxe d'immatriculation", '€', 'up') +
           scenarioNumberField(scenario, 'fraisAchat', "Frais d'achat", '€', 'up') +
@@ -217,19 +226,33 @@
       const field = input.dataset.scenarioField;
       if (field === 'includeInCharts') scenario[field] = input.checked;
       else if (SCENARIO_NUMERIC_FIELDS.has(field)) {
-        const parsed = input.value.trim() === '' ? 0 : TCO.depreciation.parseFrenchNumber(input.value);
-        const valid = Number.isFinite(parsed) && parsed >= 0;
+        const isEmpty = input.value.trim() === '';
+        const parsed = isEmpty && SCENARIO_NULLABLE_FIELDS.has(field)
+          ? null : (isEmpty ? 0 : TCO.depreciation.parseFrenchNumber(input.value));
+        const valid = parsed === null || (Number.isFinite(parsed) && parsed >= 0 &&
+          (field !== 'anneeMiseEnCirculation' || Number.isInteger(parsed)));
         input.setAttribute('aria-invalid', valid ? 'false' : 'true');
         const error = document.getElementById('scenario-error-' + input.dataset.scenarioId + '-' + field);
-        if (error) error.textContent = valid ? '' : 'Saisissez un nombre positif ou nul.';
-        scenario[field] = Number.isFinite(parsed) ? parsed : 0;
+        if (error) {
+          error.classList.toggle('field-help', valid);
+          if (!valid) error.textContent = field === 'anneeMiseEnCirculation' ? 'Saisissez une année entière.' : 'Saisissez un nombre positif ou nul.';
+          else if (field === 'anneeMiseEnCirculation' && parsed === null && scenario.acquisitionStatus === 'used') error.textContent = 'Année manquante : coefficient d’âge neutre.';
+          else if (field === 'kilometrageAchat') error.textContent = 'Déjà intégré au prix : aucune pénalité initiale.';
+          else if (field === 'kilometrageAnnuelOverride' && parsed === null) error.textContent = 'Vide : utilise l’hypothèse commune.';
+          else error.textContent = '';
+        }
+        scenario[field] = valid ? parsed : (SCENARIO_NULLABLE_FIELDS.has(field) ? null : 0);
       } else scenario[field] = input.value;
 
       if (field === 'depreciationType') {
         const levels = levelsFor(scenario.depreciationType);
         if (levels.indexOf(scenario.depreciationLevel) < 0) scenario.depreciationLevel = levels[0] || '';
       }
-      if (event.type === 'change' && ['energyType', 'depreciationType'].indexOf(field) >= 0) renderScenarios();
+      if (field === 'acquisitionStatus' && scenario.acquisitionStatus === 'new') {
+        if (scenario.anneeMiseEnCirculation === null) scenario.anneeMiseEnCirculation = new Date().getFullYear();
+        scenario.kilometrageAchat = Number(scenario.kilometrageAchat) || 0;
+      }
+      if (event.type === 'change' && ['energyType', 'acquisitionStatus', 'depreciationType'].indexOf(field) >= 0) renderScenarios();
       onChange();
     }
 
@@ -263,7 +286,7 @@
     });
 
     function renderProfiles() {
-      const headerYears = new Array(10).fill(0).map(function (_, index) { return '<th scope="col">An ' + (index + 1) + '</th>'; }).join('');
+      const headerYears = new Array(10).fill(0).map(function (_, index) { return '<th scope="col">Âge ' + (index + 1) + '</th>'; }).join('');
       const rows = state.depreciationProfiles.map(function (profile) {
         const isDefault = defaultProfileKeys.has(profile.key);
         const rates = profile.rates.map(function (rate, index) {
@@ -274,28 +297,65 @@
           '<td><div class="profile-actions"><button type="button" class="button icon" data-profile-action="duplicate" data-profile-key="' + escapeHtml(profile.key) + '">Dupliquer</button>' +
           '<button type="button" class="button icon danger-ghost" data-profile-action="delete" data-profile-key="' + escapeHtml(profile.key) + '"' + (isDefault ? ' disabled title="Dupliquez ce profil pour créer une version supprimable."' : '') + '>Supprimer</button></div></td></tr>';
       }).join('');
-      editor.innerHTML = '<table><thead><tr><th scope="col">Clé</th><th scope="col">Type de décote</th><th scope="col">Niveau</th>' + headerYears + '<th scope="col">Actions</th></tr></thead><tbody>' + rows + '</tbody></table>';
+      const advancedProfiles = state.depreciationProfiles.map(function (profile) {
+        const safeKey = escapeHtml(profile.key);
+        const ageFactors = TCO.depreciation.AGE_FACTOR_BANDS.map(function (band, index) {
+          const value = Number((profile.ageFactors || [])[index]);
+          return '<div class="field"><label for="age-factor-' + index + '-' + safeKey + '"><span>' + escapeHtml(band.label) + '</span><span class="effect-badge effect-used">Calcul</span></label>' +
+            '<div class="input-wrap"><input id="age-factor-' + index + '-' + safeKey + '" type="text" inputmode="decimal" data-profile-key="' + safeKey + '" data-age-factor-index="' + index + '" value="' + escapeHtml(String(Number.isFinite(value) ? value : 1).replace('.', ',')) + '"><span class="unit">× taux</span></div><span class="rate-error" aria-live="polite"></span></div>';
+        }).join('');
+        return '<details class="advanced-profile"><summary>' + safeKey + '</summary><div class="advanced-profile-grid">' +
+          '<div class="field"><label for="reference-' + safeKey + '"><span>Kilométrage de référence annuel</span><span class="effect-badge effect-used">Calcul</span></label><div class="input-wrap"><input id="reference-' + safeKey + '" type="text" inputmode="decimal" data-profile-key="' + safeKey + '" data-profile-param="kilometrageReferenceAnnuel" value="' + escapeHtml(String(profile.kilometrageReferenceAnnuel || 0).replace('.', ',')) + '"><span class="unit">km/an</span></div><span class="rate-error" aria-live="polite"></span></div>' +
+          '<div class="field"><label for="sensitivity-' + safeKey + '"><span>Sensibilité par 10 000 km</span><span class="effect-badge effect-used">Calcul</span></label><div class="input-wrap"><input id="sensitivity-' + safeKey + '" type="text" inputmode="decimal" data-profile-key="' + safeKey + '" data-profile-param="sensibiliteKilometrage" value="' + escapeHtml(TCO.depreciation.formatRate(profile.sensibiliteKilometrage || 0)) + '"><span class="unit">%</span></div><span class="rate-error" aria-live="polite"></span></div>' +
+          ageFactors + '</div></details>';
+      }).join('');
+      editor.innerHTML = '<div class="table-wrap"><table><thead><tr><th scope="col">Clé</th><th scope="col">Type de décote</th><th scope="col">Niveau</th>' + headerYears + '<th scope="col">Actions</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+        '<section class="advanced-depreciation"><h3>Réglages avancés âge et kilométrage</h3><p>La sensibilité est appliquée uniquement au kilométrage futur. Les coefficients d’âge multiplient les taux annuels de base.</p>' + advancedProfiles + '</section>';
     }
 
     editor.addEventListener('input', function (event) {
-      const input = event.target.closest('[data-rate-index]');
+      const input = event.target.closest('[data-rate-index], [data-profile-param], [data-age-factor-index]');
       if (!input) return;
       const profile = state.depreciationProfiles.find(function (item) { return item.key === input.dataset.profileKey; });
       if (!profile) return;
-      const rate = input.value.trim() === '' ? 0 : TCO.depreciation.normalizeRate(input.value);
-      const valid = Number.isFinite(rate) && rate >= 0 && rate <= 1;
+      let value;
+      let valid;
+      let errorText;
+      if (input.dataset.rateIndex !== undefined) {
+        value = input.value.trim() === '' ? 0 : TCO.depreciation.normalizeRate(input.value);
+        valid = Number.isFinite(value) && value >= 0 && value <= 1;
+        errorText = '0 à 100 %';
+        if (valid) profile.rates[Number(input.dataset.rateIndex)] = value;
+      } else if (input.dataset.profileParam === 'sensibiliteKilometrage') {
+        value = input.value.trim() === '' ? 0 : TCO.depreciation.normalizeRate(input.value);
+        valid = Number.isFinite(value) && value >= 0;
+        errorText = 'Pourcentage positif attendu';
+        if (valid) profile.sensibiliteKilometrage = value;
+      } else if (input.dataset.profileParam === 'kilometrageReferenceAnnuel') {
+        value = input.value.trim() === '' ? 0 : TCO.depreciation.parseFrenchNumber(input.value);
+        valid = Number.isFinite(value) && value >= 0;
+        errorText = 'Kilométrage positif attendu';
+        if (valid) profile.kilometrageReferenceAnnuel = value;
+      } else {
+        value = input.value.trim() === '' ? 1 : TCO.depreciation.parseFrenchNumber(input.value);
+        valid = Number.isFinite(value) && value >= 0;
+        errorText = 'Coefficient positif attendu';
+        if (valid) profile.ageFactors[Number(input.dataset.ageFactorIndex)] = value;
+      }
       input.setAttribute('aria-invalid', valid ? 'false' : 'true');
-      input.title = valid ? '' : 'Taux attendu entre 0 et 100 %.';
-      const error = input.nextElementSibling;
-      if (error) error.textContent = valid ? '' : '0 à 100 %';
-      if (valid) profile.rates[Number(input.dataset.rateIndex)] = rate;
+      const field = input.closest('.field');
+      const error = field ? field.querySelector('.rate-error') : input.nextElementSibling;
+      if (error) error.textContent = valid ? '' : errorText;
       onChange();
     });
     editor.addEventListener('blur', function (event) {
-      const input = event.target.closest('[data-rate-index]');
+      const input = event.target.closest('[data-rate-index], [data-profile-param], [data-age-factor-index]');
       if (!input || input.getAttribute('aria-invalid') === 'true') return;
       const profile = state.depreciationProfiles.find(function (item) { return item.key === input.dataset.profileKey; });
-      input.value = TCO.depreciation.formatRate(profile.rates[Number(input.dataset.rateIndex)]);
+      if (input.dataset.rateIndex !== undefined) input.value = TCO.depreciation.formatRate(profile.rates[Number(input.dataset.rateIndex)]);
+      else if (input.dataset.profileParam === 'sensibiliteKilometrage') input.value = TCO.depreciation.formatRate(profile.sensibiliteKilometrage);
+      else if (input.dataset.profileParam === 'kilometrageReferenceAnnuel') input.value = formatNumber(profile.kilometrageReferenceAnnuel, 0);
+      else input.value = formatNumber(profile.ageFactors[Number(input.dataset.ageFactorIndex)], 3);
     }, true);
 
     function uniqueProfile(type, level, ignoredKey) {
@@ -317,7 +377,10 @@
       }
       return {
         key: cleanType + '|' + cleanLevel, type: cleanType, level: cleanLevel,
-        rates: seed ? seed.rates.slice() : new Array(10).fill(0)
+        rates: seed ? seed.rates.slice() : new Array(10).fill(0),
+        kilometrageReferenceAnnuel: seed ? seed.kilometrageReferenceAnnuel : 0,
+        sensibiliteKilometrage: seed ? seed.sensibiliteKilometrage : 0,
+        ageFactors: seed ? seed.ageFactors.slice() : new Array(11).fill(1)
       };
     }
 
@@ -402,16 +465,26 @@
 
     function renderResultsTable(results) {
       const rows = results.map(function (result) {
-        return '<tr><td>' + escapeHtml(result.name) + (result.profileFound ? '' : ' ⚠ profil absent') + '</td>' +
+        const warnings = (result.warnings || []).concat(result.profileFound ? [] : ['Profil de décote absent.']);
+        return '<tr><td>' + escapeHtml(result.name) + (warnings.length ? '<span class="result-warning">⚠ ' + escapeHtml(warnings.join(' ')) + '</span>' : '') + '</td>' +
           '<td>' + formatCurrency(result.tcoNetApresIk) + '</td><td>' + formatCurrency(result.tcoBrut) + '</td>' +
-          '<td>' + formatCurrency(result.coutAcquisitionNet) + '</td><td>' + formatCurrency(result.valeurResiduelle) + '</td>' +
+          '<td>' + formatCurrency(result.coutAcquisitionNet) + '</td>' +
+          '<td>' + (result.ageAchat === null ? '—' : formatNumber(result.ageAchat, 0) + ' ans') + '</td>' +
+          '<td>' + (result.ageHorizon === null ? '—' : formatNumber(result.ageHorizon, 0) + ' ans') + '</td>' +
+          '<td>' + (result.ageAchat === null ? 'Possession ' : 'Âge ') + formatNumber(result.anneeProfilHorizon, 0) +
+            (result.tauxProfilRepeteHorizon ? ' (taux âge 10 répété)' : '') + ' · ' + TCO.depreciation.formatRate(result.tauxDecoteBaseHorizon) + '</td>' +
+          '<td>' + formatNumber(result.kilometrageAchat, 0) + ' km</td>' +
+          '<td>' + formatNumber(result.kilometrageHorizon, 0) + ' km</td>' +
+          '<td>' + formatCurrency(result.valeurResiduelleAvantCorrection) + '</td>' +
+          '<td>' + (result.correctionKilometrique > 0 ? '+' : '') + formatCurrency(result.correctionKilometrique) + '</td>' +
+          '<td>' + formatCurrency(result.valeurResiduelle) + '</td>' +
           '<td>' + formatCurrency(result.coutDecote) + '</td><td>' + formatCurrency(result.coutEnergieCumule) + '</td>' +
           '<td>' + formatCurrency(result.entretienCumule) + '</td><td>' + formatCurrency(result.pneusCumule) + '</td>' +
           '<td>' + formatCurrency(result.assuranceCumule) + '</td><td>' + formatCurrency(result.fraisAchat + result.taxes) + '</td>' +
           '<td>− ' + formatCurrency(result.ikRetenueCumulee) + '</td><td>' + formatCurrency(result.coutAnnuelMoyen) + '</td>' +
           '<td>' + (result.coutParKm === null ? '—' : formatNumber(result.coutParKm, 3) + ' €/km') + '</td></tr>';
       }).join('');
-      document.getElementById('results-table').innerHTML = '<table><thead><tr><th scope="col">Scénario</th><th scope="col">TCO net</th><th scope="col">TCO brut</th><th scope="col">Acquisition nette</th><th scope="col">Valeur résiduelle</th><th scope="col">Décote</th><th scope="col">Énergie</th><th scope="col">Entretien</th><th scope="col">Pneus</th><th scope="col">Assurance</th><th scope="col">Frais + taxes</th><th scope="col">IK retenues</th><th scope="col">Moyenne/an</th><th scope="col">Coût/km</th></tr></thead><tbody>' + rows + '</tbody></table>';
+      document.getElementById('results-table').innerHTML = '<table><thead><tr><th scope="col">Scénario</th><th scope="col">TCO net</th><th scope="col">TCO brut</th><th scope="col">Acquisition nette</th><th scope="col">Âge achat</th><th scope="col">Âge horizon</th><th scope="col">Taux de profil à l’horizon</th><th scope="col">Km achat</th><th scope="col">Km horizon</th><th scope="col">Résiduelle avant km</th><th scope="col">Correction km</th><th scope="col">Résiduelle finale</th><th scope="col">Décote</th><th scope="col">Énergie</th><th scope="col">Entretien</th><th scope="col">Pneus</th><th scope="col">Assurance</th><th scope="col">Frais + taxes</th><th scope="col">IK retenues</th><th scope="col">Moyenne/an</th><th scope="col">Coût/km</th></tr></thead><tbody>' + rows + '</tbody></table>';
     }
 
     function renderDynamic(results) {

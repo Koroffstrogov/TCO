@@ -2,6 +2,11 @@
   'use strict';
 
   const KEYS = {
+    settings: 'tcoApp.v3.settings',
+    scenarios: 'tcoApp.v3.scenarios',
+    profiles: 'tcoApp.v3.depreciationProfiles'
+  };
+  const V2_KEYS = {
     settings: 'tcoApp.v2.settings',
     scenarios: 'tcoApp.v2.scenarios',
     profiles: 'tcoApp.v2.depreciationProfiles'
@@ -45,12 +50,20 @@
           const number = Number(rate);
           return Number.isFinite(number) ? Math.min(1, Math.max(0, number)) : 0;
         });
+        const reference = Number(copy.kilometrageReferenceAnnuel);
+        const sensitivity = Number(copy.sensibiliteKilometrage);
+        copy.kilometrageReferenceAnnuel = Number.isFinite(reference) ? Math.max(0, reference) : 0;
+        copy.sensibiliteKilometrage = Number.isFinite(sensitivity) ? Math.max(0, sensitivity) : 0;
+        copy.ageFactors = new Array(11).fill(1).map(function (_, index) {
+          const factor = Number(Array.isArray(profile.ageFactors) ? profile.ageFactors[index] : 1);
+          return Number.isFinite(factor) && factor >= 0 ? factor : 1;
+        });
         return copy;
       })
       : defaults.depreciationProfiles;
 
     return {
-      version: 2,
+      version: 3,
       settings: normalizedSettings,
       scenarios: scenarios.map(function (scenario, index) {
         const base = defaults.scenarios[index] || defaults.scenarios[0];
@@ -74,6 +87,8 @@
         };
         const thermalConsumption = Number(merged.consoThermiqueL100);
         const electricConsumption = Number(merged.consoElectriqueKwh100);
+        const yearValue = Number(scenario.anneeMiseEnCirculation);
+        const purchaseMileage = Number(scenario.kilometrageAchat);
         const legacyPrice = isElectric ? oldNumber('prixNetDepartElec') : oldNumber('prixNetDepartThermique');
         const legacyFees = isElectric
           ? (isNew ? oldNumber('fraisAchatElectriqueNeuve') : oldNumber('fraisAchatElectriqueOccasion'))
@@ -82,7 +97,7 @@
         const legacyTyres = isElectric ? oldNumber('pneusModelYStandard') : oldNumber('pneusThermiqueStandard');
         const legacyInsurance = isElectric ? oldNumber('assuranceElectriqueStandard') : oldNumber('assuranceThermiqueStandard');
         const legacyIk = oldNumber('ikActuellesAnnuelles') + (isElectric ? oldNumber('bonusIkElectriqueRetenu') : 0);
-        return Object.assign({}, merged, {
+        const normalizedScenario = Object.assign({}, merged, {
           id: String(scenario.id || ('scenario_' + Date.now() + '_' + index)),
           name: String(scenario.name || ('Scénario ' + (index + 1))),
           energyType: merged.energyType === 'electric' ? 'electric' : 'thermal',
@@ -100,11 +115,19 @@
           ikAnnuelleRetenue: scenarioNumber('ikAnnuelleRetenue', legacyIk),
           consoThermiqueL100: Number.isFinite(thermalConsumption) ? thermalConsumption : 0,
           consoElectriqueKwh100: Number.isFinite(electricConsumption) ? electricConsumption : 0,
-          kilometrageTotalAnnuelOverride: nullableNumber('kilometrageTotalAnnuelOverride'),
+          anneeMiseEnCirculation: hasSourceScenarios && Object.prototype.hasOwnProperty.call(scenario, 'anneeMiseEnCirculation')
+            ? (Number.isFinite(yearValue) && yearValue > 0 ? Math.trunc(yearValue) : null)
+            : (isNew ? new Date().getFullYear() : null),
+          kilometrageAchat: Number.isFinite(purchaseMileage) ? Math.max(0, purchaseMileage) : 0,
+          kilometrageAnnuelOverride: Object.prototype.hasOwnProperty.call(scenario, 'kilometrageAnnuelOverride')
+            ? nullableNumber('kilometrageAnnuelOverride')
+            : nullableNumber('kilometrageTotalAnnuelOverride'),
           kilometrageProRembourseIkOverride: nullableNumber('kilometrageProRembourseIkOverride'),
           prixEnergieOverride: nullableNumber('prixEnergieOverride'),
           includeInCharts: scenario.includeInCharts !== false
         });
+        delete normalizedScenario.kilometrageTotalAnnuelOverride;
+        return normalizedScenario;
       }),
       depreciationProfiles: profiles.length ? profiles : defaults.depreciationProfiles
     };
@@ -112,19 +135,26 @@
 
   function loadState() {
     const current = {
-      version: 2,
+      version: 3,
       settings: read(KEYS.settings, null),
       scenarios: read(KEYS.scenarios, null),
       depreciationProfiles: read(KEYS.profiles, null)
     };
     if (current.settings || current.scenarios || current.depreciationProfiles) return normalizeState(current);
-    const migrated = normalizeState({
+    const v2 = {
+      version: 2,
+      settings: read(V2_KEYS.settings, null),
+      scenarios: read(V2_KEYS.scenarios, null),
+      depreciationProfiles: read(V2_KEYS.profiles, null)
+    };
+    const source = v2.settings || v2.scenarios || v2.depreciationProfiles ? v2 : {
       version: 1,
       settings: read(LEGACY_KEYS.settings, null),
       scenarios: read(LEGACY_KEYS.scenarios, null),
       depreciationProfiles: read(LEGACY_KEYS.profiles, null)
-    });
-    // Écrit une copie V2 dès la première lecture pour ne pas répéter la migration V1.
+    };
+    const migrated = normalizeState(source);
+    // Écrit une copie V3 dès la première lecture pour ne pas répéter les migrations.
     saveState(migrated);
     return migrated;
   }
@@ -143,7 +173,7 @@
 
   function resetState() {
     try {
-      [KEYS, LEGACY_KEYS].forEach(function (keySet) {
+      [KEYS, V2_KEYS, LEGACY_KEYS].forEach(function (keySet) {
         Object.keys(keySet).forEach(function (name) { localStorage.removeItem(keySet[name]); });
       });
     } catch (error) {
@@ -155,7 +185,7 @@
   function exportState(state) {
     const normalized = normalizeState(state);
     return JSON.stringify({
-      version: 2,
+      version: 3,
       exportedAt: new Date().toISOString(),
       settings: normalized.settings,
       scenarios: normalized.scenarios,
@@ -196,6 +226,7 @@
 
   TCO.storage = {
     KEYS: KEYS,
+    V2_KEYS: V2_KEYS,
     LEGACY_KEYS: LEGACY_KEYS,
     loadState: loadState,
     saveState: saveState,

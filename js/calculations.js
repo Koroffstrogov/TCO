@@ -26,6 +26,13 @@
   function calculateScenarioTco(settings, scenario, profiles) {
     const horizon = getHorizon(settings);
     const isElectric = scenario.energyType === 'electric';
+    const purchaseYear = new Date().getFullYear();
+    const registrationYear = Number(scenario.anneeMiseEnCirculation);
+    const hasRegistrationYear = Number.isFinite(registrationYear) && registrationYear > 0;
+    const ageAchat = scenario.acquisitionStatus === 'new'
+      ? 0
+      : (hasRegistrationYear ? Math.max(0, purchaseYear - Math.trunc(registrationYear)) : null);
+    const kilometrageAchat = nonNegative(scenario.kilometrageAchat);
     const prixVehicule = nonNegative(scenario.prixAchatNet);
     const aidesApplicables = nonNegative(scenario.aideAchat) + nonNegative(scenario.remiseComplementaire);
     const fraisAchat = nonNegative(scenario.fraisAchat);
@@ -34,13 +41,35 @@
     const coutAcquisitionNet = assietteValeur + fraisAchat + taxes;
     const profile = TCO.depreciation.getProfile(profiles, scenario.depreciationType, scenario.depreciationLevel);
     const rates = profile ? profile.rates : new Array(10).fill(0);
-    const residualSeries = TCO.depreciation.computeAnnualResidualSeries(assietteValeur, rates, horizon);
-    const valeurResiduelle = residualSeries[horizon - 1] === undefined ? assietteValeur : residualSeries[horizon - 1];
+    const annualOverride = scenario.kilometrageAnnuelOverride === undefined
+      ? scenario.kilometrageTotalAnnuelOverride : scenario.kilometrageAnnuelOverride;
+    const annualKm = nonNegative(annualOverride === null || annualOverride === undefined
+      ? settings.kilometrageTotalAnnuel : annualOverride);
+    const adjustedResidualSeries = TCO.depreciation.computeAdjustedResidualSeries(
+      assietteValeur,
+      rates,
+      horizon,
+      {
+        ageAtPurchase: ageAchat,
+        annualMileage: annualKm,
+        purchaseMileage: kilometrageAchat,
+        referenceAnnualMileage: profile ? profile.kilometrageReferenceAnnuel : 0,
+        mileageSensitivity: profile ? profile.sensibiliteKilometrage : 0,
+        ageFactors: profile ? profile.ageFactors : null
+      }
+    );
+    const finalDepreciationPoint = adjustedResidualSeries[horizon - 1] || {
+      baseResidual: assietteValeur,
+      finalResidual: assietteValeur,
+      mileageCorrection: 0,
+      mileageFactor: 1,
+      mileage: kilometrageAchat
+    };
+    const valeurResiduelleAvantCorrection = finalDepreciationPoint.baseResidual;
+    const correctionKilometrique = finalDepreciationPoint.mileageCorrection;
+    const valeurResiduelle = finalDepreciationPoint.finalResidual;
     const coutDecote = assietteValeur - valeurResiduelle;
 
-    const annualKm = nonNegative(scenario.kilometrageTotalAnnuelOverride === null ||
-      scenario.kilometrageTotalAnnuelOverride === undefined
-      ? settings.kilometrageTotalAnnuel : scenario.kilometrageTotalAnnuelOverride);
     const prixEnergie = nonNegative(scenario.prixEnergieOverride === null ||
       scenario.prixEnergieOverride === undefined
       ? (isElectric ? settings.prixElectricite : settings.prixEssence)
@@ -63,14 +92,24 @@
     const tcoNetApresIk = tcoBrut - ikRetenueCumulee;
     const kmTotalHorizon = annualKm * horizon;
 
-    const seriesAnnuelles = residualSeries.map(function (residual, index) {
-      const year = index + 1;
-      const depreciation = assietteValeur - residual;
+    const seriesAnnuelles = adjustedResidualSeries.map(function (point) {
+      const year = point.year;
+      const depreciation = assietteValeur - point.finalResidual;
       const annualCosts = year * (coutEnergieAnnuel + entretienAnnuel + pneusAnnuel + assuranceAnnuel);
       const gross = depreciation + fraisAchat + taxes + annualCosts;
       return {
         year: year,
-        valeurResiduelle: residual,
+        age: point.age,
+        kilometrage: point.mileage,
+        anneeProfil: point.profileYear,
+        tauxProfilRepete: point.profileRateRepeated,
+        tauxDecoteBase: point.baseRate,
+        coefficientAge: point.ageFactor,
+        tauxDecoteEffectif: point.effectiveRate,
+        valeurResiduelleAvantCorrection: point.baseResidual,
+        facteurKilometrage: point.mileageFactor,
+        correctionKilometrique: point.mileageCorrection,
+        valeurResiduelle: point.finalResidual,
         coutDecote: depreciation,
         tcoBrut: gross,
         tcoNet: gross - year * ikRetenueAnnuelle
@@ -86,8 +125,20 @@
       coutAcquisitionNet: coutAcquisitionNet,
       assietteValeur: assietteValeur,
       aidesApplicables: aidesApplicables,
+      anneeAchat: purchaseYear,
+      ageAchat: ageAchat,
+      ageHorizon: ageAchat === null ? null : ageAchat + horizon,
+      kilometrageAchat: kilometrageAchat,
+      kilometrageHorizon: kilometrageAchat + annualKm * horizon,
       kilometrageAnnuelUtilise: annualKm,
       prixEnergieUtilise: prixEnergie,
+      valeurResiduelleAvantCorrection: valeurResiduelleAvantCorrection,
+      correctionKilometrique: correctionKilometrique,
+      facteurKilometrage: finalDepreciationPoint.mileageFactor,
+      anneeProfilHorizon: finalDepreciationPoint.profileYear,
+      tauxProfilRepeteHorizon: finalDepreciationPoint.profileRateRepeated,
+      tauxDecoteBaseHorizon: finalDepreciationPoint.baseRate,
+      tauxDecoteEffectifHorizon: finalDepreciationPoint.effectiveRate,
       valeurResiduelle: valeurResiduelle,
       coutDecote: coutDecote,
       fraisAchat: fraisAchat,
@@ -104,7 +155,12 @@
       coutAnnuelMoyen: tcoNetApresIk / horizon,
       coutParKm: kmTotalHorizon > 0 ? tcoNetApresIk / kmTotalHorizon : null,
       ecartVsReference: 0,
-      seriesAnnuelles: seriesAnnuelles
+      seriesAnnuelles: seriesAnnuelles,
+      warnings: scenario.acquisitionStatus === 'used' && ageAchat === null
+        ? ["Année de mise en circulation manquante : coefficient d’âge neutre appliqué."]
+        : (hasRegistrationYear && registrationYear > purchaseYear
+          ? ["L’année de mise en circulation est postérieure à l’année d’achat retenue."]
+          : [])
     };
   }
 
