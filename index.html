@@ -44,8 +44,15 @@
         <div class="section-heading">
           <div>
             <p class="eyebrow">Toutes les valeurs restent modifiables</p>
-            <h2 id="settings-title">Paramètres globaux</h2>
+            <h2 id="settings-title">Hypothèses communes</h2>
           </div>
+        </div>
+        <div class="effect-guide" aria-label="Légende des effets sur le TCO">
+          <span class="effect-badge effect-up">↑ TCO</span><span>coût qui augmente le TCO</span>
+          <span class="effect-badge effect-down">↓ TCO</span><span>montant qui réduit le TCO</span>
+          <span class="effect-badge effect-used">Calcul</span><span>utilisé, effet variable</span>
+          <span class="effect-badge effect-indicative">Indicatif</span><span>repère non injecté dans le TCO</span>
+          <span class="effect-badge effect-display">Hors TCO</span><span>description ou affichage seulement</span>
         </div>
         <div id="ik-indicators" class="indicator-strip" aria-live="polite"></div>
         <form id="settings-form" novalidate></form>
@@ -59,6 +66,7 @@
           </div>
           <button id="add-scenario-button" class="button small" type="button">Ajouter</button>
         </div>
+        <p class="scenario-effect-note"><span class="effect-badge effect-down">↓ TCO</span> Les aides, remises et IK sont déduites. <span class="effect-badge effect-up">↑ TCO</span> Les autres coûts s’ajoutent ou alimentent la décote.</p>
         <div id="scenarios-list" class="scenario-list"></div>
       </section>
     </div>
@@ -103,7 +111,7 @@
   </main>
 
   <footer class="app-footer">
-    <p>Calcul indicatif fondé uniquement sur vos hypothèses. Données conservées dans ce navigateur.</p>
+    <p>Estimation fondée uniquement sur vos hypothèses. Les champs « Indicatif » et « Hors TCO » ne modifient pas le résultat.</p>
   </footer>
 
   <!-- Scripts classiques pour garantir l’ouverture directe en file:// sans serveur. -->

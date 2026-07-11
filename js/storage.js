@@ -2,6 +2,11 @@
   'use strict';
 
   const KEYS = {
+    settings: 'tcoApp.v2.settings',
+    scenarios: 'tcoApp.v2.scenarios',
+    profiles: 'tcoApp.v2.depreciationProfiles'
+  };
+  const LEGACY_KEYS = {
     settings: 'tcoApp.v1.settings',
     scenarios: 'tcoApp.v1.scenarios',
     profiles: 'tcoApp.v1.depreciationProfiles'
@@ -25,7 +30,8 @@
       const number = Number(settings[key]);
       normalizedSettings[key] = Number.isFinite(number) ? number : defaults.settings[key];
     });
-    const scenarios = Array.isArray(source.scenarios) && source.scenarios.length
+    const hasSourceScenarios = Array.isArray(source.scenarios) && source.scenarios.length > 0;
+    const scenarios = hasSourceScenarios
       ? source.scenarios.filter(function (item) { return item && typeof item === 'object'; })
       : defaults.scenarios;
     const profiles = Array.isArray(source.depreciationProfiles) && source.depreciationProfiles.length
@@ -44,13 +50,38 @@
       : defaults.depreciationProfiles;
 
     return {
-      version: 1,
+      version: 2,
       settings: normalizedSettings,
       scenarios: scenarios.map(function (scenario, index) {
         const base = defaults.scenarios[index] || defaults.scenarios[0];
         const merged = Object.assign({}, base, scenario);
+        const isElectric = merged.energyType === 'electric';
+        const isNew = merged.acquisitionStatus === 'new';
+        const hasOwn = function (key) { return Object.prototype.hasOwnProperty.call(scenario, key); };
+        const oldNumber = function (key) {
+          const number = Number(settings[key]);
+          return Number.isFinite(number) ? number : 0;
+        };
+        const scenarioNumber = function (key, legacyValue) {
+          const number = Number(hasSourceScenarios && hasOwn(key) ? scenario[key] : legacyValue);
+          return Number.isFinite(number) ? number : 0;
+        };
+        const nullableNumber = function (key) {
+          const value = scenario[key];
+          if (value === null || value === undefined || value === '') return null;
+          const number = Number(value);
+          return Number.isFinite(number) ? number : null;
+        };
         const thermalConsumption = Number(merged.consoThermiqueL100);
         const electricConsumption = Number(merged.consoElectriqueKwh100);
+        const legacyPrice = isElectric ? oldNumber('prixNetDepartElec') : oldNumber('prixNetDepartThermique');
+        const legacyFees = isElectric
+          ? (isNew ? oldNumber('fraisAchatElectriqueNeuve') : oldNumber('fraisAchatElectriqueOccasion'))
+          : oldNumber('fraisAchatThermiqueOccasion');
+        const legacyMaintenance = isElectric ? oldNumber('entretienElectriqueStandard') : oldNumber('entretienThermiqueStandard');
+        const legacyTyres = isElectric ? oldNumber('pneusModelYStandard') : oldNumber('pneusThermiqueStandard');
+        const legacyInsurance = isElectric ? oldNumber('assuranceElectriqueStandard') : oldNumber('assuranceThermiqueStandard');
+        const legacyIk = oldNumber('ikActuellesAnnuelles') + (isElectric ? oldNumber('bonusIkElectriqueRetenu') : 0);
         return Object.assign({}, merged, {
           id: String(scenario.id || ('scenario_' + Date.now() + '_' + index)),
           name: String(scenario.name || ('Scénario ' + (index + 1))),
@@ -58,8 +89,20 @@
           acquisitionStatus: merged.acquisitionStatus === 'new' ? 'new' : 'used',
           depreciationType: String(merged.depreciationType || base.depreciationType),
           depreciationLevel: String(merged.depreciationLevel || base.depreciationLevel),
+          prixAchatNet: scenarioNumber('prixAchatNet', legacyPrice),
+          taxeImmatriculation: scenarioNumber('taxeImmatriculation', oldNumber('taxeImmatriculation')),
+          fraisAchat: scenarioNumber('fraisAchat', legacyFees),
+          aideAchat: scenarioNumber('aideAchat', isElectric && isNew ? oldNumber('aideVeNeuveEligible') : 0),
+          remiseComplementaire: scenarioNumber('remiseComplementaire', isElectric && isNew ? oldNumber('surbonusRemiseComplementaire') : 0),
+          entretienAnnuel: scenarioNumber('entretienAnnuel', legacyMaintenance),
+          pneusAnnuel: scenarioNumber('pneusAnnuel', legacyTyres),
+          assuranceAnnuelle: scenarioNumber('assuranceAnnuelle', legacyInsurance),
+          ikAnnuelleRetenue: scenarioNumber('ikAnnuelleRetenue', legacyIk),
           consoThermiqueL100: Number.isFinite(thermalConsumption) ? thermalConsumption : 0,
           consoElectriqueKwh100: Number.isFinite(electricConsumption) ? electricConsumption : 0,
+          kilometrageTotalAnnuelOverride: nullableNumber('kilometrageTotalAnnuelOverride'),
+          kilometrageProRembourseIkOverride: nullableNumber('kilometrageProRembourseIkOverride'),
+          prixEnergieOverride: nullableNumber('prixEnergieOverride'),
           includeInCharts: scenario.includeInCharts !== false
         });
       }),
@@ -68,11 +111,22 @@
   }
 
   function loadState() {
-    return normalizeState({
+    const current = {
+      version: 2,
       settings: read(KEYS.settings, null),
       scenarios: read(KEYS.scenarios, null),
       depreciationProfiles: read(KEYS.profiles, null)
+    };
+    if (current.settings || current.scenarios || current.depreciationProfiles) return normalizeState(current);
+    const migrated = normalizeState({
+      version: 1,
+      settings: read(LEGACY_KEYS.settings, null),
+      scenarios: read(LEGACY_KEYS.scenarios, null),
+      depreciationProfiles: read(LEGACY_KEYS.profiles, null)
     });
+    // Écrit une copie V2 dès la première lecture pour ne pas répéter la migration V1.
+    saveState(migrated);
+    return migrated;
   }
 
   function saveState(state) {
@@ -89,7 +143,9 @@
 
   function resetState() {
     try {
-      Object.keys(KEYS).forEach(function (name) { localStorage.removeItem(KEYS[name]); });
+      [KEYS, LEGACY_KEYS].forEach(function (keySet) {
+        Object.keys(keySet).forEach(function (name) { localStorage.removeItem(keySet[name]); });
+      });
     } catch (error) {
       // Le mode privé peut interdire localStorage ; l’état en mémoire reste utilisable.
     }
@@ -99,7 +155,7 @@
   function exportState(state) {
     const normalized = normalizeState(state);
     return JSON.stringify({
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
       settings: normalized.settings,
       scenarios: normalized.scenarios,
@@ -140,6 +196,7 @@
 
   TCO.storage = {
     KEYS: KEYS,
+    LEGACY_KEYS: LEGACY_KEYS,
     loadState: loadState,
     saveState: saveState,
     resetState: resetState,

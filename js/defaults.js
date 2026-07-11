@@ -3,50 +3,52 @@
 
   const DEFAULT_SETTINGS = Object.freeze({
     horizonKpi: 5,
-    prixNetDepartElec: 0,
-    prixNetDepartThermique: 0,
+    horizonAnalyseRecommande: 5,
     kilometrageTotalAnnuel: 0,
     kilometrageProRembourseIk: 0,
     prixEssence: 0,
     prixElectricite: 0,
     baremeIkActuel: 0,
     majorationVehiculeElectrique: 0,
-    coefficientPrudenceIk: 1,
-    ikActuellesAnnuelles: 0,
-    bonusIkElectriqueRetenu: 0,
-    horizonAnalyseRecommande: 5,
-    taxeImmatriculation: 0,
-    fraisAchatThermiqueOccasion: 0,
-    fraisAchatElectriqueOccasion: 0,
-    fraisAchatElectriqueNeuve: 0,
-    entretienThermiqueStandard: 0,
-    entretienElectriqueStandard: 0,
-    pneusThermiqueStandard: 0,
-    pneusModelYStandard: 0,
-    assuranceThermiqueStandard: 0,
-    assuranceElectriqueStandard: 0,
-    aideVeNeuveEligible: 0,
-    surbonusRemiseComplementaire: 0
+    coefficientPrudenceIk: 1
   });
 
   const DEFAULT_SCENARIOS = Object.freeze([
     {
       id: 'thermal_used', name: 'Thermique occasion', energyType: 'thermal',
-      acquisitionStatus: 'used', depreciationType: 'Thermique occasion',
+      acquisitionStatus: 'used', prixAchatNet: 0, taxeImmatriculation: 0,
+      fraisAchat: 0, aideAchat: 0, remiseComplementaire: 0,
+      entretienAnnuel: 0, pneusAnnuel: 0, assuranceAnnuelle: 0,
+      ikAnnuelleRetenue: 0, depreciationType: 'Thermique occasion',
       depreciationLevel: 'Central', consoThermiqueL100: 0,
-      consoElectriqueKwh100: 0, includeInCharts: true
+      consoElectriqueKwh100: 0, includeInCharts: true,
+      kilometrageTotalAnnuelOverride: null,
+      kilometrageProRembourseIkOverride: null,
+      prixEnergieOverride: null
     },
     {
       id: 'electric_used', name: 'Électrique occasion', energyType: 'electric',
-      acquisitionStatus: 'used', depreciationType: 'Tesla occasion',
+      acquisitionStatus: 'used', prixAchatNet: 0, taxeImmatriculation: 0,
+      fraisAchat: 0, aideAchat: 0, remiseComplementaire: 0,
+      entretienAnnuel: 0, pneusAnnuel: 0, assuranceAnnuelle: 0,
+      ikAnnuelleRetenue: 0, depreciationType: 'Tesla occasion',
       depreciationLevel: 'Central', consoThermiqueL100: 0,
-      consoElectriqueKwh100: 0, includeInCharts: true
+      consoElectriqueKwh100: 0, includeInCharts: true,
+      kilometrageTotalAnnuelOverride: null,
+      kilometrageProRembourseIkOverride: null,
+      prixEnergieOverride: null
     },
     {
       id: 'electric_new', name: 'Électrique neuve', energyType: 'electric',
-      acquisitionStatus: 'new', depreciationType: 'Électrique neuve',
+      acquisitionStatus: 'new', prixAchatNet: 0, taxeImmatriculation: 0,
+      fraisAchat: 0, aideAchat: 0, remiseComplementaire: 0,
+      entretienAnnuel: 0, pneusAnnuel: 0, assuranceAnnuelle: 0,
+      ikAnnuelleRetenue: 0, depreciationType: 'Électrique neuve',
       depreciationLevel: 'Central', consoThermiqueL100: 0,
-      consoElectriqueKwh100: 0, includeInCharts: true
+      consoElectriqueKwh100: 0, includeInCharts: true,
+      kilometrageTotalAnnuelOverride: null,
+      kilometrageProRembourseIkOverride: null,
+      prixEnergieOverride: null
     }
   ]);
 
@@ -80,7 +82,7 @@
 
   function createDefaultState() {
     return {
-      version: 1,
+      version: 2,
       settings: clone(DEFAULT_SETTINGS),
       scenarios: clone(DEFAULT_SCENARIOS),
       depreciationProfiles: clone(DEFAULT_DEPRECIATION_PROFILES)

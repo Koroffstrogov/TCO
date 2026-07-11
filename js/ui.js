@@ -2,46 +2,37 @@
   'use strict';
 
   const SETTINGS_GROUPS = [
-    { title: 'Horizon et kilométrage', fields: [
-      ['horizonKpi', 'Horizon KPI', 'années', 'integer'],
-      ['horizonAnalyseRecommande', "Horizon d'analyse recommandé", 'années', 'integer'],
-      ['kilometrageTotalAnnuel', 'Kilométrage total annuel', 'km/an'],
-      ['kilometrageProRembourseIk', 'Kilométrage pro remboursé IK', 'km/an']
+    { title: 'Cadre utilisé dans le calcul', fields: [
+      ['horizonKpi', 'Horizon KPI', 'années', 'integer', 'used'],
+      ['kilometrageTotalAnnuel', 'Kilométrage total annuel', 'km/an', 'number', 'up']
     ]},
-    { title: "Prix d'achat", fields: [
-      ['prixNetDepartElec', 'Prix net départ élec', '€'],
-      ['prixNetDepartThermique', 'Prix net départ thermique', '€']
+    { title: 'Prix d’énergie utilisés dans le calcul', fields: [
+      ['prixEssence', 'Prix essence', '€/L', 'number', 'up'],
+      ['prixElectricite', 'Prix électricité', '€/kWh', 'number', 'up']
     ]},
-    { title: 'Énergie', fields: [
-      ['prixEssence', 'Prix essence', '€/L'],
-      ['prixElectricite', 'Prix électricité', '€/kWh']
-    ]},
-    { title: 'Indemnités kilométriques', fields: [
-      ['baremeIkActuel', 'Barème IK actuel', '€/km'],
-      ['majorationVehiculeElectrique', 'Majoration véhicule électrique', '%', 'percent'],
-      ['coefficientPrudenceIk', 'Coefficient de prudence IK', 'coefficient'],
-      ['ikActuellesAnnuelles', 'IK actuelles annuelles', '€/an'],
-      ['bonusIkElectriqueRetenu', 'Bonus IK électrique retenu', '€/an']
-    ]},
-    { title: 'Frais et fiscalité', fields: [
-      ['taxeImmatriculation', "Taxe d'immatriculation", '€'],
-      ['fraisAchatThermiqueOccasion', 'Frais achat thermique occasion', '€'],
-      ['fraisAchatElectriqueOccasion', 'Frais achat électrique occasion', '€'],
-      ['fraisAchatElectriqueNeuve', 'Frais achat électrique neuve', '€']
-    ]},
-    { title: 'Entretien, pneus et assurance', fields: [
-      ['entretienThermiqueStandard', 'Entretien thermique standard', '€/an'],
-      ['entretienElectriqueStandard', 'Entretien électrique standard', '€/an'],
-      ['pneusThermiqueStandard', 'Pneus thermique standard', '€/an'],
-      ['pneusModelYStandard', 'Pneus Model Y standard', '€/an'],
-      ['assuranceThermiqueStandard', 'Assurance thermique standard', '€/an'],
-      ['assuranceElectriqueStandard', 'Assurance électrique standard', '€/an']
-    ]},
-    { title: 'Aides et remises', fields: [
-      ['aideVeNeuveEligible', 'Aide VE neuve éligible', '€'],
-      ['surbonusRemiseComplementaire', 'Surbonus / remise complémentaire', '€']
+    { title: 'Repères indicatifs — sans effet automatique sur le TCO', fields: [
+      ['horizonAnalyseRecommande', "Horizon d'analyse recommandé", 'années', 'integer', 'indicative'],
+      ['kilometrageProRembourseIk', 'Kilométrage pro remboursé IK', 'km/an', 'number', 'indicative'],
+      ['baremeIkActuel', 'Barème IK actuel', '€/km', 'number', 'indicative'],
+      ['majorationVehiculeElectrique', 'Majoration véhicule électrique', '%', 'percent', 'indicative'],
+      ['coefficientPrudenceIk', 'Coefficient de prudence IK', 'coefficient', 'number', 'indicative']
     ]}
   ];
+
+  const EFFECT_LABELS = {
+    up: '↑ TCO',
+    down: '↓ TCO',
+    used: 'Calcul',
+    indicative: 'Indicatif',
+    display: 'Hors TCO'
+  };
+
+  const SCENARIO_NUMERIC_FIELDS = new Set([
+    'prixAchatNet', 'taxeImmatriculation', 'fraisAchat', 'aideAchat',
+    'remiseComplementaire', 'entretienAnnuel', 'pneusAnnuel',
+    'assuranceAnnuelle', 'ikAnnuelleRetenue', 'consoThermiqueL100',
+    'consoElectriqueKwh100'
+  ]);
 
   function escapeHtml(value) {
     return String(value === undefined || value === null ? '' : value)
@@ -67,6 +58,12 @@
   function initialInputValue(value, type) {
     if (type === 'percent') return TCO.depreciation.formatRate(Number(value) || 0);
     return String(value === undefined || value === null ? 0 : value).replace('.', ',');
+  }
+
+  function effectBadge(effect) {
+    return effect && EFFECT_LABELS[effect]
+      ? '<span class="effect-badge effect-' + effect + '">' + EFFECT_LABELS[effect] + '</span>'
+      : '';
   }
 
   function initUi(options) {
@@ -95,9 +92,10 @@
           const label = field[1];
           const unit = field[2];
           const type = field[3] || 'number';
+          const effect = field[4] || 'used';
           const id = 'setting-' + key;
-          return '<div class="field">' +
-            '<label for="' + id + '">' + escapeHtml(label) + '</label>' +
+          return '<div class="field effect-field effect-' + effect + '">' +
+            '<label for="' + id + '"><span>' + escapeHtml(label) + '</span>' + effectBadge(effect) + '</label>' +
             '<div class="input-wrap"><input id="' + id + '" type="text" inputmode="decimal" ' +
               'data-setting="' + key + '" data-value-type="' + type + '" value="' +
               escapeHtml(initialInputValue(state.settings[key], type)) + '" aria-describedby="error-' + key + '">' +
@@ -157,8 +155,22 @@
       }).join('');
     }
 
-    function scenarioField(id, field, label, content) {
-      return '<div class="field"><label for="' + id + '">' + label + '</label>' + content + '</div>';
+    function scenarioField(id, field, label, content, effect) {
+      const classification = effect || 'used';
+      return '<div class="field effect-field effect-' + classification + '"><label for="' + id + '"><span>' +
+        label + '</span>' + effectBadge(classification) + '</label>' + content + '</div>';
+    }
+
+    function scenarioNumberField(scenario, field, label, unit, effect) {
+      const safeId = escapeHtml(scenario.id);
+      const inputId = field + '-' + safeId;
+      const errorId = 'scenario-error-' + safeId + '-' + field;
+      const value = scenario[field] === null || scenario[field] === undefined ? '' : String(scenario[field]).replace('.', ',');
+      return scenarioField(inputId, field, label,
+        '<div class="input-wrap"><input id="' + inputId + '" type="text" inputmode="decimal" ' +
+        'aria-describedby="' + errorId + '" data-scenario-id="' + safeId + '" data-scenario-field="' + field +
+        '" data-scenario-number="true" value="' + escapeHtml(value) + '"><span class="unit">' +
+        escapeHtml(unit) + '</span></div><p id="' + errorId + '" class="field-error" aria-live="polite"></p>', effect);
     }
 
     function renderScenarios() {
@@ -175,13 +187,22 @@
           '<div class="scenario-actions"><button class="button icon" type="button" data-scenario-action="duplicate" data-scenario-id="' + id + '">Dupliquer</button>' +
           '<button class="button icon danger-ghost" type="button" data-scenario-action="delete" data-scenario-id="' + id + '"' + (state.scenarios.length === 1 ? ' disabled' : '') + '>Supprimer</button></div></div>' +
           '<div class="scenario-fields">' +
-          scenarioField('name-' + id, 'name', 'Nom du scénario', '<input id="name-' + id + '" type="text" data-scenario-id="' + id + '" data-scenario-field="name" value="' + escapeHtml(scenario.name) + '">') +
-          scenarioField('energy-' + id, 'energyType', "Type d'énergie", '<select id="energy-' + id + '" data-scenario-id="' + id + '" data-scenario-field="energyType"><option value="thermal"' + (scenario.energyType === 'thermal' ? ' selected' : '') + '>Thermique</option><option value="electric"' + (isElectric ? ' selected' : '') + '>Électrique</option></select>') +
-          scenarioField('status-' + id, 'acquisitionStatus', 'Statut', '<select id="status-' + id + '" data-scenario-id="' + id + '" data-scenario-field="acquisitionStatus"><option value="used"' + (scenario.acquisitionStatus === 'used' ? ' selected' : '') + '>Occasion</option><option value="new"' + (scenario.acquisitionStatus === 'new' ? ' selected' : '') + '>Neuf</option></select>') +
-          scenarioField('type-' + id, 'depreciationType', 'Profil de décote', '<select id="type-' + id + '" data-scenario-id="' + id + '" data-scenario-field="depreciationType">' + optionList(types, scenario.depreciationType) + '</select>') +
-          scenarioField('level-' + id, 'depreciationLevel', 'Niveau de décote', '<select id="level-' + id + '" data-scenario-id="' + id + '" data-scenario-field="depreciationLevel">' + optionList(levels, scenario.depreciationLevel) + '</select>') +
-          scenarioField('consumption-' + id, consumptionField, consumptionLabel, '<div class="input-wrap"><input id="consumption-' + id + '" type="text" inputmode="decimal" aria-describedby="scenario-error-' + id + '" data-scenario-id="' + id + '" data-scenario-field="' + consumptionField + '" value="' + escapeHtml(String(scenario[consumptionField] || 0).replace('.', ',')) + '"><span class="unit">' + consumptionUnit + '</span></div><p id="scenario-error-' + id + '" class="field-error" aria-live="polite"></p>') +
-          '<label class="check-field"><input type="checkbox" data-scenario-id="' + id + '" data-scenario-field="includeInCharts"' + (scenario.includeInCharts !== false ? ' checked' : '') + '> Inclure dans les graphiques</label>' +
+          scenarioField('name-' + id, 'name', 'Nom du scénario', '<input id="name-' + id + '" type="text" data-scenario-id="' + id + '" data-scenario-field="name" value="' + escapeHtml(scenario.name) + '">', 'display') +
+          scenarioField('energy-' + id, 'energyType', "Type d'énergie", '<select id="energy-' + id + '" data-scenario-id="' + id + '" data-scenario-field="energyType"><option value="thermal"' + (scenario.energyType === 'thermal' ? ' selected' : '') + '>Thermique</option><option value="electric"' + (isElectric ? ' selected' : '') + '>Électrique</option></select>', 'used') +
+          scenarioField('status-' + id, 'acquisitionStatus', 'Statut', '<select id="status-' + id + '" data-scenario-id="' + id + '" data-scenario-field="acquisitionStatus"><option value="used"' + (scenario.acquisitionStatus === 'used' ? ' selected' : '') + '>Occasion</option><option value="new"' + (scenario.acquisitionStatus === 'new' ? ' selected' : '') + '>Neuf</option></select>', 'display') +
+          scenarioNumberField(scenario, 'prixAchatNet', "Prix d'achat net", '€', 'up') +
+          scenarioNumberField(scenario, 'taxeImmatriculation', "Taxe d'immatriculation", '€', 'up') +
+          scenarioNumberField(scenario, 'fraisAchat', "Frais d'achat", '€', 'up') +
+          scenarioNumberField(scenario, 'aideAchat', "Aide à l'achat", '€', 'down') +
+          scenarioNumberField(scenario, 'remiseComplementaire', 'Remise complémentaire', '€', 'down') +
+          scenarioNumberField(scenario, 'entretienAnnuel', 'Entretien annuel', '€/an', 'up') +
+          scenarioNumberField(scenario, 'pneusAnnuel', 'Pneus annuels', '€/an', 'up') +
+          scenarioNumberField(scenario, 'assuranceAnnuelle', 'Assurance annuelle', '€/an', 'up') +
+          scenarioNumberField(scenario, 'ikAnnuelleRetenue', 'IK annuelle retenue', '€/an', 'down') +
+          scenarioNumberField(scenario, consumptionField, consumptionLabel, consumptionUnit, 'up') +
+          scenarioField('type-' + id, 'depreciationType', 'Profil de décote', '<select id="type-' + id + '" data-scenario-id="' + id + '" data-scenario-field="depreciationType">' + optionList(types, scenario.depreciationType) + '</select>', 'used') +
+          scenarioField('level-' + id, 'depreciationLevel', 'Niveau de décote', '<select id="level-' + id + '" data-scenario-id="' + id + '" data-scenario-field="depreciationLevel">' + optionList(levels, scenario.depreciationLevel) + '</select>', 'used') +
+          '<label class="check-field"><input type="checkbox" data-scenario-id="' + id + '" data-scenario-field="includeInCharts"' + (scenario.includeInCharts !== false ? ' checked' : '') + '> Inclure dans les graphiques ' + effectBadge('display') + '</label>' +
           '</div></article>';
       }).join('');
     }
@@ -195,12 +216,12 @@
       if (!scenario) return;
       const field = input.dataset.scenarioField;
       if (field === 'includeInCharts') scenario[field] = input.checked;
-      else if (field.indexOf('conso') === 0) {
+      else if (SCENARIO_NUMERIC_FIELDS.has(field)) {
         const parsed = input.value.trim() === '' ? 0 : TCO.depreciation.parseFrenchNumber(input.value);
         const valid = Number.isFinite(parsed) && parsed >= 0;
         input.setAttribute('aria-invalid', valid ? 'false' : 'true');
-        const error = document.getElementById('scenario-error-' + input.dataset.scenarioId);
-        if (error) error.textContent = valid ? '' : 'La consommation doit être un nombre positif ou nul.';
+        const error = document.getElementById('scenario-error-' + input.dataset.scenarioId + '-' + field);
+        if (error) error.textContent = valid ? '' : 'Saisissez un nombre positif ou nul.';
         scenario[field] = Number.isFinite(parsed) ? parsed : 0;
       } else scenario[field] = input.value;
 
@@ -231,11 +252,12 @@
 
     document.getElementById('add-scenario-button').addEventListener('click', function () {
       const firstProfile = state.depreciationProfiles[0] || { type: '', level: '' };
-      state.scenarios.push({
-        id: uid('scenario'), name: 'Nouveau scénario', energyType: 'electric', acquisitionStatus: 'used',
-        depreciationType: firstProfile.type, depreciationLevel: firstProfile.level,
-        consoThermiqueL100: 0, consoElectriqueKwh100: 0, includeInCharts: true
+      const scenario = TCO.defaults.clone(TCO.defaults.DEFAULT_SCENARIOS[1]);
+      Object.assign(scenario, {
+        id: uid('scenario'), name: 'Nouveau scénario',
+        depreciationType: firstProfile.type, depreciationLevel: firstProfile.level
       });
+      state.scenarios.push(scenario);
       renderScenarios();
       onChange();
     });
@@ -352,6 +374,7 @@
     function renderIndicators() {
       const ik = TCO.calculations.calculateIkIndicators(state.settings);
       document.getElementById('ik-indicators').innerHTML =
+        '<p class="indicator-intro"><span class="effect-badge effect-indicative">Indicatif uniquement</span> Ces deux montants aident à renseigner les scénarios, mais ne modifient jamais le TCO automatiquement.</p>' +
         '<div class="indicator"><span>IK indicative annuelle</span><strong>' + formatCurrency(ik.ikIndicativeAnnuelle, 2) + '</strong></div>' +
         '<div class="indicator"><span>Bonus électrique indicatif</span><strong>' + formatCurrency(ik.bonusIkElectriqueIndicatif, 2) + '</strong></div>';
     }

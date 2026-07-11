@@ -26,17 +26,10 @@
   function calculateScenarioTco(settings, scenario, profiles) {
     const horizon = getHorizon(settings);
     const isElectric = scenario.energyType === 'electric';
-    const isNewElectric = isElectric && scenario.acquisitionStatus === 'new';
-    const prixVehicule = nonNegative(isElectric ? settings.prixNetDepartElec : settings.prixNetDepartThermique);
-    const aidesApplicables = isNewElectric
-      ? nonNegative(settings.aideVeNeuveEligible) + nonNegative(settings.surbonusRemiseComplementaire)
-      : 0;
-    let fraisAchat = 0;
-    if (isElectric && scenario.acquisitionStatus === 'used') fraisAchat = nonNegative(settings.fraisAchatElectriqueOccasion);
-    if (isElectric && scenario.acquisitionStatus === 'new') fraisAchat = nonNegative(settings.fraisAchatElectriqueNeuve);
-    if (!isElectric && scenario.acquisitionStatus === 'used') fraisAchat = nonNegative(settings.fraisAchatThermiqueOccasion);
-
-    const taxes = nonNegative(settings.taxeImmatriculation);
+    const prixVehicule = nonNegative(scenario.prixAchatNet);
+    const aidesApplicables = nonNegative(scenario.aideAchat) + nonNegative(scenario.remiseComplementaire);
+    const fraisAchat = nonNegative(scenario.fraisAchat);
+    const taxes = nonNegative(scenario.taxeImmatriculation);
     const assietteValeur = Math.max(0, prixVehicule - aidesApplicables);
     const coutAcquisitionNet = assietteValeur + fraisAchat + taxes;
     const profile = TCO.depreciation.getProfile(profiles, scenario.depreciationType, scenario.depreciationLevel);
@@ -45,15 +38,20 @@
     const valeurResiduelle = residualSeries[horizon - 1] === undefined ? assietteValeur : residualSeries[horizon - 1];
     const coutDecote = assietteValeur - valeurResiduelle;
 
-    const annualKm = nonNegative(settings.kilometrageTotalAnnuel);
+    const annualKm = nonNegative(scenario.kilometrageTotalAnnuelOverride === null ||
+      scenario.kilometrageTotalAnnuelOverride === undefined
+      ? settings.kilometrageTotalAnnuel : scenario.kilometrageTotalAnnuelOverride);
+    const prixEnergie = nonNegative(scenario.prixEnergieOverride === null ||
+      scenario.prixEnergieOverride === undefined
+      ? (isElectric ? settings.prixElectricite : settings.prixEssence)
+      : scenario.prixEnergieOverride);
     const coutEnergieAnnuel = isElectric
-      ? annualKm * nonNegative(scenario.consoElectriqueKwh100) / 100 * nonNegative(settings.prixElectricite)
-      : annualKm * nonNegative(scenario.consoThermiqueL100) / 100 * nonNegative(settings.prixEssence);
-    const entretienAnnuel = nonNegative(isElectric ? settings.entretienElectriqueStandard : settings.entretienThermiqueStandard);
-    const pneusAnnuel = nonNegative(isElectric ? settings.pneusModelYStandard : settings.pneusThermiqueStandard);
-    const assuranceAnnuel = nonNegative(isElectric ? settings.assuranceElectriqueStandard : settings.assuranceThermiqueStandard);
-    const ikRetenueAnnuelle = nonNegative(settings.ikActuellesAnnuelles) +
-      (isElectric ? nonNegative(settings.bonusIkElectriqueRetenu) : 0);
+      ? annualKm * nonNegative(scenario.consoElectriqueKwh100) / 100 * prixEnergie
+      : annualKm * nonNegative(scenario.consoThermiqueL100) / 100 * prixEnergie;
+    const entretienAnnuel = nonNegative(scenario.entretienAnnuel);
+    const pneusAnnuel = nonNegative(scenario.pneusAnnuel);
+    const assuranceAnnuel = nonNegative(scenario.assuranceAnnuelle);
+    const ikRetenueAnnuelle = nonNegative(scenario.ikAnnuelleRetenue);
 
     const coutEnergieCumule = coutEnergieAnnuel * horizon;
     const entretienCumule = entretienAnnuel * horizon;
@@ -88,6 +86,8 @@
       coutAcquisitionNet: coutAcquisitionNet,
       assietteValeur: assietteValeur,
       aidesApplicables: aidesApplicables,
+      kilometrageAnnuelUtilise: annualKm,
+      prixEnergieUtilise: prixEnergie,
       valeurResiduelle: valeurResiduelle,
       coutDecote: coutDecote,
       fraisAchat: fraisAchat,
