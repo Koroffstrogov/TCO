@@ -51,23 +51,81 @@ function assertThreeAnnualReadings(result, label) {
 }
 
 assert.equal(state().version, 3);
-assert.equal(Object.keys(state().settings).length, 11, 'onze hypothèses communes');
+assert.equal(Object.keys(state().settings).length, 12, 'douze hypothèses communes et options');
 assert.equal(state().settings.forcerKilometrageTotalAnnuel, false, 'forçage kilométrage désactivé par défaut');
+assert.equal(state().settings.forcerPrixEnergie, false, 'forçage prix énergie désactivé par défaut');
 assert.equal(state().settings.forcerIkIndicatives, false, 'forçage IK désactivé par défaut');
 {
   const data = state();
   data.settings.forcerKilometrageTotalAnnuel = 'true';
+  data.settings.forcerPrixEnergie = '1';
   data.settings.forcerIkIndicatives = 1;
   const normalized = TCO.storage.normalizeState(data);
   assert.equal(normalized.settings.forcerKilometrageTotalAnnuel, true, 'forçage kilométrage normalisé en booléen');
+  assert.equal(normalized.settings.forcerPrixEnergie, true, 'forçage prix énergie normalisé en booléen');
   assert.equal(normalized.settings.forcerIkIndicatives, true, 'forçage IK normalisé en booléen');
 }
 ['prixAchatNet', 'fraisAchat', 'taxeImmatriculation', 'aideAchat',
   'remiseComplementaire', 'montantReprise', 'entretienAnnuel', 'pneusAnnuel',
   'assuranceAnnuelle', 'ikAnnuelleRetenue', 'anneeMiseEnCirculation',
-  'kilometrageAchat', 'kilometrageAnnuelOverride'].forEach((field) => {
+  'kilometrageAchat', 'kilometrageAnnuelOverride', 'prixEnergieOverride'].forEach((field) => {
   assert.equal(Object.prototype.hasOwnProperty.call(state().scenarios[0], field), true, `champ scénario ${field}`);
 });
+
+// Les primitives de formulaire conservent une structure homogène et accessible.
+{
+  const field = TCO.ui.renderFormField({
+    id: 'kilometrage-test', helpId: 'kilometrage-test-help', label: 'Kilométrage annuel',
+    status: 'inherited', effect: 'calculated', help: 'Valeur commune : 15 000 km/an',
+    control: '<input id="kilometrage-test" readonly aria-readonly="true">'
+  });
+  assert.match(field, /class="form-field field effect-field effect-calculated is-inherited"/);
+  assert.match(field, /<label for="kilometrage-test">Kilométrage annuel<\/label>/);
+  assert.match(field, /status-inherited">Hérité/);
+  assert.match(field, /Valeur commune : 15 000 km\/an/);
+  assert.match(field, /aria-live="polite"/);
+
+  const section = TCO.ui.renderFormSection({
+    id: 'scenario-test-annual', title: 'Coûts annuels', help: 'Hypothèses répétées.', body: field
+  });
+  assert.match(section, /aria-labelledby="scenario-test-annual-title"/);
+  assert.match(section, /<h3 id="scenario-test-annual-title">Coûts annuels<\/h3>/);
+
+  const option = TCO.ui.renderOptionBanner({
+    key: 'forcerTest', label: 'Appliquer à tous', help: 'Valeur commune.'
+  }, true);
+  assert.match(option, /data-setting-toggle="forcerTest" checked/);
+  assert.match(option, /<strong>Appliquer à tous<\/strong>/);
+
+  const summary = TCO.ui.renderCalculatedSummary({
+    status: 'calculated', help: 'Résultat calculé.', items: [{ label: 'IK', value: '1 000 €' }]
+  });
+  assert.match(summary, /status-calculated">Calculé/);
+  assert.match(summary, /calculated-summary-item/);
+}
+
+{
+  const uiSource = fs.readFileSync(path.join(root, 'js/ui.js'), 'utf8');
+  ['Identification', 'Achat et financement', 'Coûts annuels', 'Décote', "Options d’affichage"].forEach((title) => {
+    assert.ok(uiSource.includes("title: '" + title + "'"), `section scénario ${title}`);
+  });
+  assert.match(uiSource, /readonly aria-readonly="true"/);
+  assert.match(uiSource, /Appliquer le prix de l’énergie à tous les scénarios/);
+  assert.match(uiSource, /'Kilométrage annuel'/);
+  assert.doesNotMatch(uiSource, /Kilométrage annuel du scénario/);
+  assert.doesNotMatch(uiSource, /Prix (?:essence|électricité) du scénario/);
+
+  const htmlSource = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  assert.match(htmlSource, /<details class="indicator-guide">/);
+  assert.doesNotMatch(htmlSource, /<details class="indicator-guide" open/);
+
+  const cssSource = fs.readFileSync(path.join(root, 'css/styles.css'), 'utf8');
+  assert.match(cssSource, /scenario-section-grid \{ grid-template-columns: repeat\(4/);
+  assert.match(cssSource, /height: 42px/);
+  assert.match(cssSource, /field-support:empty \{ display: none; \}/);
+  assert.match(cssSource, /@media \(max-width: 900px\)/);
+  assert.match(cssSource, /@media \(max-width: 620px\)/);
+}
 
 {
   const data = state();
@@ -341,6 +399,35 @@ assert.equal(state().settings.forcerIkIndicatives, false, 'forçage IK désactiv
   const result = TCO.calculations.calculateScenarioTco(data.settings, data.scenarios[1], data.depreciationProfiles);
   close(result.coutEnergieAnnuel, 576, 'overrides kilométrage et prix énergie');
   close(result.kilometrageAnnuelUtilise, 12000, 'kilométrage scénario utilisé');
+}
+
+// Le prix d’énergie commun forcé ignore l’override sans supprimer sa valeur personnalisée.
+{
+  const data = state();
+  Object.assign(data.settings, {
+    horizonKpi: 1,
+    kilometrageTotalAnnuel: 10000,
+    prixEssence: 2,
+    prixElectricite: 0.25,
+    forcerPrixEnergie: true
+  });
+  Object.assign(data.scenarios[0], { consoThermiqueL100: 6, prixEnergieOverride: 2.5 });
+  Object.assign(data.scenarios[1], { consoElectriqueKwh100: 16, prixEnergieOverride: 0.4 });
+
+  const thermalForced = TCO.calculations.calculateScenarioTco(data.settings, data.scenarios[0], data.depreciationProfiles);
+  const electricForced = TCO.calculations.calculateScenarioTco(data.settings, data.scenarios[1], data.depreciationProfiles);
+  close(thermalForced.prixEnergieUtilise, 2, 'prix essence commun forcé');
+  close(electricForced.prixEnergieUtilise, 0.25, 'prix électricité commun forcé');
+  close(thermalForced.coutEnergieAnnuel, 1200, 'coût thermique avec prix commun forcé');
+  close(electricForced.coutEnergieAnnuel, 400, 'coût électrique avec prix commun forcé');
+  assert.equal(data.scenarios[0].prixEnergieOverride, 2.5, 'prix essence personnalisé conservé');
+  assert.equal(data.scenarios[1].prixEnergieOverride, 0.4, 'prix électricité personnalisé conservé');
+
+  data.settings.forcerPrixEnergie = false;
+  const thermalCustom = TCO.calculations.calculateScenarioTco(data.settings, data.scenarios[0], data.depreciationProfiles);
+  const electricCustom = TCO.calculations.calculateScenarioTco(data.settings, data.scenarios[1], data.depreciationProfiles);
+  close(thermalCustom.prixEnergieUtilise, 2.5, 'prix essence personnalisé restauré');
+  close(electricCustom.prixEnergieUtilise, 0.4, 'prix électricité personnalisé restauré');
 }
 
 // Une occasion âgée de 5 ans commence au taux âge 6.

@@ -1,39 +1,66 @@
 (function (TCO) {
   'use strict';
 
-  const SETTINGS_GROUPS = [
-    { title: 'Cadre utilisé dans le calcul', fields: [
-      ['horizonKpi', 'Horizon KPI', 'années', 'integer', 'used'],
-      ['kilometrageTotalAnnuel', 'Kilométrage total annuel', 'km/an', 'number', 'up', {
+  const COMMON_FORM_SECTIONS = [
+    {
+      id: 'calculation-frame',
+      title: 'Cadre de calcul',
+      help: 'Définit l’horizon et le kilométrage utilisés pour comparer tous les scénarios.',
+      fields: [
+        { key: 'horizonKpi', label: 'Horizon KPI', unit: 'années', type: 'integer', effect: 'calculated', status: 'calculated' },
+        { key: 'kilometrageTotalAnnuel', label: 'Kilométrage annuel', unit: 'km/an', type: 'number', effect: 'calculated' }
+      ],
+      option: {
         key: 'forcerKilometrageTotalAnnuel',
-        label: 'Forcer ce kilométrage dans tous les scénarios',
-        help: 'Les kilométrages annuels propres aux scénarios sont alors désactivés.'
-      }]
-    ]},
-    { title: 'Prix d’énergie utilisés dans le calcul', fields: [
-      ['prixEssence', 'Prix essence', '€/L', 'number', 'up'],
-      ['prixElectricite', 'Prix électricité', '€/kWh', 'number', 'up']
-    ]},
-    { title: 'Repères indicatifs — sans effet automatique sur le TCO', fields: [
-      ['horizonAnalyseRecommande', "Horizon d'analyse recommandé", 'années', 'integer', 'indicative'],
-      ['kilometrageProRembourseIk', 'Kilométrage pro remboursé IK', 'km/an', 'number', 'indicative'],
-      ['baremeIkActuel', 'Barème IK actuel', '€/km', 'number', 'indicative'],
-      ['majorationVehiculeElectrique', 'Majoration véhicule électrique', '%', 'percent', 'indicative'],
-      ['coefficientPrudenceIk', 'Coefficient de prudence IK', 'coefficient', 'number', 'indicative']
-    ], indicators: true, toggles: [{
-      key: 'forcerIkIndicatives',
-      label: 'Appliquer les IK indicatives aux scénarios',
-      help: 'Thermique : IK indicative. Électrique : IK indicative + bonus électrique.'
-    }]}
+        label: 'Appliquer le kilométrage annuel à tous les scénarios',
+        help: 'Les champs kilométriques des scénarios deviennent des valeurs héritées en lecture seule.'
+      }
+    },
+    {
+      id: 'energy-prices',
+      title: 'Prix de l’énergie',
+      help: 'Valeurs communes utilisées lorsque le scénario ne définit pas son propre prix.',
+      fields: [
+        { key: 'prixEssence', label: 'Essence', unit: '€/L', type: 'number', effect: 'cost' },
+        { key: 'prixElectricite', label: 'Électricité', unit: '€/kWh', type: 'number', effect: 'cost' }
+      ],
+      option: {
+        key: 'forcerPrixEnergie',
+        label: 'Appliquer le prix de l’énergie à tous les scénarios',
+        help: 'Chaque scénario hérite du prix commun correspondant à son type d’énergie.'
+      }
+    },
+    {
+      id: 'ik-references',
+      title: 'Repères IK',
+      help: 'Ces hypothèses calculent des repères ; elles ne modifient les scénarios que sur activation explicite.',
+      fields: [
+        { key: 'kilometrageProRembourseIk', label: 'Kilométrage professionnel', unit: 'km/an', type: 'number', effect: 'indicative', status: 'indicative' },
+        { key: 'baremeIkActuel', label: 'Barème IK', unit: '€/km', type: 'number', effect: 'indicative', status: 'indicative' },
+        { key: 'majorationVehiculeElectrique', label: 'Majoration électrique', unit: '%', type: 'percent', effect: 'indicative', status: 'indicative' },
+        { key: 'coefficientPrudenceIk', label: 'Coefficient de prudence', unit: 'coefficient', type: 'number', effect: 'indicative', status: 'indicative' },
+        { key: 'horizonAnalyseRecommande', label: 'Horizon conseillé', unit: 'années', type: 'integer', effect: 'indicative', status: 'indicative' }
+      ]
+    },
+    {
+      id: 'scenario-application',
+      title: 'Application aux scénarios',
+      help: 'Synthèse des IK calculées et choix de leur application automatique.',
+      fields: [],
+      calculatedSummary: true,
+      option: {
+        key: 'forcerIkIndicatives',
+        label: 'Appliquer automatiquement les IK indicatives',
+        help: 'Thermique : IK indicative. Électrique : IK indicative + bonus électrique.'
+      }
+    }
   ];
 
-  const EFFECT_LABELS = {
-    up: '↑ TCO',
-    down: '↓ TCO',
-    used: 'Calcul',
+  const FIELD_STATUS_LABELS = {
+    calculated: 'Calculé',
     indicative: 'Indicatif',
-    projection: 'Projection',
-    display: 'Hors TCO'
+    inherited: 'Hérité',
+    display: 'Hors calcul'
   };
 
   const SCENARIO_NUMERIC_FIELDS = new Set([
@@ -41,9 +68,11 @@
     'remiseComplementaire', 'montantReprise', 'entretienAnnuel', 'pneusAnnuel',
     'assuranceAnnuelle', 'ikAnnuelleRetenue', 'consoThermiqueL100',
     'consoElectriqueKwh100', 'anneeMiseEnCirculation', 'kilometrageAchat',
-    'kilometrageAnnuelOverride'
+    'kilometrageAnnuelOverride', 'prixEnergieOverride'
   ]);
-  const SCENARIO_NULLABLE_FIELDS = new Set(['anneeMiseEnCirculation', 'kilometrageAnnuelOverride']);
+  const SCENARIO_NULLABLE_FIELDS = new Set([
+    'anneeMiseEnCirculation', 'kilometrageAnnuelOverride', 'prixEnergieOverride'
+  ]);
   const ANNUAL_DETAIL_COST_ROWS = [
     ['achatVehicule', 'Prix du véhicule'],
     ['fraisAchat', "Frais d’achat"],
@@ -64,6 +93,12 @@
     return String(value === undefined || value === null ? '' : value)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+  }
+
+  function domToken(value) {
+    return String(value).replace(/[^a-zA-Z0-9_-]/g, function (character) {
+      return '_' + character.codePointAt(0).toString(16) + '_';
+    });
   }
 
   function uid(prefix) {
@@ -276,10 +311,44 @@
     return String(value === undefined || value === null ? 0 : value).replace('.', ',');
   }
 
-  function effectBadge(effect) {
-    return effect && EFFECT_LABELS[effect]
-      ? '<span class="effect-badge effect-' + effect + '">' + EFFECT_LABELS[effect] + '</span>'
+  function fieldStatusBadge(status) {
+    return status && FIELD_STATUS_LABELS[status]
+      ? '<span class="field-status status-' + status + '">' + FIELD_STATUS_LABELS[status] + '</span>'
       : '';
+  }
+
+  function renderFormField(config) {
+    const status = config.status || '';
+    const helpClass = config.help ? ' field-help' : '';
+    return '<div class="form-field field effect-field effect-' + (config.effect || 'neutral') +
+      (status === 'inherited' ? ' is-inherited' : '') + '">' +
+      '<div class="form-field-label"><label for="' + escapeHtml(config.id) + '">' + escapeHtml(config.label) + '</label>' +
+      fieldStatusBadge(status) + '</div><div class="form-field-control">' + config.control + '</div>' +
+      '<p id="' + escapeHtml(config.helpId) + '" class="field-support field-error' + helpClass + '" aria-live="polite">' +
+      escapeHtml(config.help || '') + '</p></div>';
+  }
+
+  function renderFormSection(config) {
+    return '<section class="form-section' + (config.className ? ' ' + config.className : '') + '" aria-labelledby="' +
+      escapeHtml(config.id) + '-title"><div class="form-section-heading"><div><h3 id="' + escapeHtml(config.id) +
+      '-title">' + escapeHtml(config.title) + '</h3>' + (config.help ? '<p>' + escapeHtml(config.help) + '</p>' : '') +
+      '</div></div>' + config.body + '</section>';
+  }
+
+  function renderOptionBanner(toggle, checked, inputAttributes) {
+    const attributes = inputAttributes || ('data-setting-toggle="' + escapeHtml(toggle.key) + '"');
+    return '<label class="form-option-banner"><input type="checkbox" ' + attributes +
+      (checked ? ' checked' : '') + '><span><strong>' + escapeHtml(toggle.label) + '</strong><small>' +
+      escapeHtml(toggle.help) + '</small></span></label>';
+  }
+
+  function renderCalculatedSummary(config) {
+    const cards = config.items.map(function (item) {
+      return '<div class="calculated-summary-item"><span>' + escapeHtml(item.label) + '</span><strong>' +
+        escapeHtml(item.value) + '</strong></div>';
+    }).join('');
+    return '<div class="calculated-summary-heading">' + fieldStatusBadge(config.status) + '<p>' +
+      escapeHtml(config.help) + '</p></div><div class="calculated-summary-grid">' + cards + '</div>';
   }
 
   function initUi(options) {
@@ -314,37 +383,38 @@
       showMessage.timer = window.setTimeout(function () { message.hidden = true; }, 5000);
     }
 
-    function renderSettingToggle(toggle) {
-      return '<label class="settings-toggle"><input type="checkbox" data-setting-toggle="' + escapeHtml(toggle.key) + '"' +
-        (state.settings[toggle.key] === true ? ' checked' : '') + '><span>' + escapeHtml(toggle.label) +
-        '<small>' + escapeHtml(toggle.help) + '</small></span></label>';
-    }
-
     function renderSettings() {
-      settingsForm.innerHTML = SETTINGS_GROUPS.map(function (group, groupIndex) {
-        const fields = group.fields.map(function (field) {
-          const key = field[0];
-          const label = field[1];
-          const unit = field[2];
-          const type = field[3] || 'number';
-          const effect = field[4] || 'used';
-          const toggle = field[5];
+      settingsForm.innerHTML = COMMON_FORM_SECTIONS.map(function (section) {
+        const fields = section.fields.map(function (field) {
+          const key = field.key;
+          const type = field.type || 'number';
           const id = 'setting-' + key;
-          return '<div class="field effect-field effect-' + effect + '">' +
-            '<label for="' + id + '"><span>' + escapeHtml(label) + '</span>' + effectBadge(effect) + '</label>' +
-            '<div class="input-wrap"><input id="' + id + '" type="text" inputmode="decimal" ' +
+          const helpId = 'error-' + key;
+          return renderFormField({
+            id: id,
+            helpId: helpId,
+            label: field.label,
+            status: field.status,
+            effect: field.effect,
+            control: '<div class="input-wrap"><input id="' + id + '" type="text" inputmode="decimal" ' +
               'data-setting="' + key + '" data-value-type="' + type + '" value="' +
-              escapeHtml(initialInputValue(state.settings[key], type)) + '" aria-describedby="error-' + key + '">' +
-              '<span class="unit">' + escapeHtml(unit) + '</span></div>' +
-            '<p id="error-' + key + '" class="field-error" aria-live="polite"></p>' +
-            (toggle ? renderSettingToggle(toggle) : '') + '</div>';
+              escapeHtml(initialInputValue(state.settings[key], type)) + '" aria-describedby="' + helpId + '">' +
+              '<span class="unit">' + escapeHtml(field.unit) + '</span></div>'
+          });
         }).join('');
-        const indicators = group.indicators
-          ? '<div id="ik-indicators" class="indicator-strip" aria-live="polite"></div>'
+        const indicators = section.calculatedSummary
+          ? '<div id="ik-indicators" class="calculated-summary" aria-live="polite"></div>'
           : '';
-        const toggles = (group.toggles || []).map(renderSettingToggle).join('');
-        return '<fieldset class="settings-group"><legend>' + escapeHtml(group.title) +
-          '</legend><div class="form-grid" data-group="' + groupIndex + '">' + fields + '</div>' + indicators + toggles + '</fieldset>';
+        const option = section.option
+          ? renderOptionBanner(section.option, state.settings[section.option.key] === true)
+          : '';
+        return renderFormSection({
+          id: 'settings-' + section.id,
+          title: section.title,
+          help: section.help,
+          className: section.calculatedSummary ? 'form-section-application' : '',
+          body: (fields ? '<div class="form-section-grid common-fields">' + fields + '</div>' : '') + indicators + option
+        });
       }).join('');
     }
 
@@ -371,6 +441,7 @@
       validateSetting(input, parsed, type);
       state.settings[input.dataset.setting] = Number.isFinite(parsed) ? parsed : 0;
       if ((state.settings.forcerKilometrageTotalAnnuel === true && input.dataset.setting === 'kilometrageTotalAnnuel') ||
+        (state.settings.forcerPrixEnergie === true && ['prixEssence', 'prixElectricite'].indexOf(input.dataset.setting) >= 0) ||
         (state.settings.forcerIkIndicatives === true && [
           'kilometrageProRembourseIk', 'baremeIkActuel', 'coefficientPrudenceIk', 'majorationVehiculeElectrique'
         ].indexOf(input.dataset.setting) >= 0)) {
@@ -410,25 +481,58 @@
       }).join('');
     }
 
-    function scenarioField(id, field, label, content, effect) {
-      const classification = effect || 'used';
-      return '<div class="field effect-field effect-' + classification + '"><label for="' + id + '"><span>' +
-        label + '</span>' + effectBadge(classification) + '</label>' + content + '</div>';
+    function scenarioField(id, label, control, options) {
+      const config = options || {};
+      return renderFormField({
+        id: id,
+        helpId: config.helpId || (id + '-help'),
+        label: label,
+        control: control,
+        effect: config.effect || 'neutral',
+        status: config.status,
+        help: config.help
+      });
+    }
+
+    function scenarioTextField(scenario, field, label, options) {
+      const scenarioId = escapeHtml(scenario.id);
+      const inputId = field + '-' + domToken(scenario.id);
+      const helpId = inputId + '-help';
+      return scenarioField(inputId, label,
+        '<input id="' + inputId + '" type="text" aria-describedby="' + helpId + '" data-scenario-id="' + scenarioId +
+        '" data-scenario-field="' + field + '" value="' + escapeHtml(scenario[field]) + '">',
+        Object.assign({ helpId: helpId }, options || {}));
+    }
+
+    function scenarioSelectField(scenario, field, label, optionsHtml, options) {
+      const scenarioId = escapeHtml(scenario.id);
+      const inputId = field + '-' + domToken(scenario.id);
+      const helpId = inputId + '-help';
+      return scenarioField(inputId, label,
+        '<select id="' + inputId + '" aria-describedby="' + helpId + '" data-scenario-id="' + scenarioId +
+        '" data-scenario-field="' + field + '">' + optionsHtml + '</select>',
+        Object.assign({ helpId: helpId }, options || {}));
     }
 
     function scenarioNumberField(scenario, field, label, unit, effect, help, options) {
-      const safeId = escapeHtml(scenario.id);
-      const inputId = field + '-' + safeId;
-      const errorId = 'scenario-error-' + safeId + '-' + field;
+      const scenarioId = escapeHtml(scenario.id);
+      const scenarioToken = domToken(scenario.id);
+      const inputId = field + '-' + scenarioToken;
+      const errorId = 'scenario-error-' + scenarioToken + '-' + field;
       const config = options || {};
       const sourceValue = Object.prototype.hasOwnProperty.call(config, 'value') ? config.value : scenario[field];
       const value = sourceValue === null || sourceValue === undefined ? '' : String(sourceValue).replace('.', ',');
-      return scenarioField(inputId, field, label,
+      return scenarioField(inputId, label,
         '<div class="input-wrap"><input id="' + inputId + '" type="text" inputmode="decimal" ' +
-        'aria-describedby="' + errorId + '" data-scenario-id="' + safeId + '" data-scenario-field="' + field +
-        '" data-scenario-number="true" value="' + escapeHtml(value) + '"' + (config.disabled ? ' disabled aria-disabled="true"' : '') + '><span class="unit">' +
-        escapeHtml(unit) + '</span></div><p id="' + errorId + '" class="field-error' + (help ? ' field-help' : '') + '" aria-live="polite">' +
-        escapeHtml(help || '') + '</p>', effect);
+        'aria-describedby="' + errorId + '" data-scenario-id="' + scenarioId + '" data-scenario-field="' + field +
+        '" data-scenario-number="true" value="' + escapeHtml(value) + '"' +
+        (config.readonly ? ' readonly aria-readonly="true"' : '') + '><span class="unit">' +
+        escapeHtml(unit) + '</span></div>', {
+          effect: effect,
+          status: config.status,
+          help: help,
+          helpId: errorId
+        });
     }
 
     function isForcedMileageEnabled() {
@@ -437,6 +541,10 @@
 
     function isForcedIkEnabled() {
       return state.settings.forcerIkIndicatives === true;
+    }
+
+    function isForcedEnergyPriceEnabled() {
+      return state.settings.forcerPrixEnergie === true;
     }
 
     function forcedIkForScenario(scenario) {
@@ -448,47 +556,90 @@
       const types = getProfileTypes();
       scenariosList.innerHTML = state.scenarios.map(function (scenario) {
         const id = escapeHtml(scenario.id);
+        const sectionToken = domToken(scenario.id);
         const isElectric = scenario.energyType === 'electric';
         const mileageForced = isForcedMileageEnabled();
+        const energyPriceForced = isForcedEnergyPriceEnabled();
         const ikForced = isForcedIkEnabled();
         const forcedIk = ikForced ? forcedIkForScenario(scenario) : null;
+        const forcedEnergyPrice = isElectric ? state.settings.prixElectricite : state.settings.prixEssence;
         const levels = levelsFor(scenario.depreciationType);
         const consumptionField = isElectric ? 'consoElectriqueKwh100' : 'consoThermiqueL100';
         const consumptionLabel = isElectric ? 'Consommation électrique' : 'Consommation thermique';
         const consumptionUnit = isElectric ? 'kWh/100 km' : 'L/100 km';
+        const energyPriceLabel = isElectric ? 'Prix électricité' : 'Prix essence';
+        const energyPriceUnit = isElectric ? '€/kWh' : '€/L';
+        const identificationFields =
+          scenarioTextField(scenario, 'name', 'Nom du scénario', {
+            effect: 'neutral', status: 'display'
+          }) +
+          scenarioSelectField(scenario, 'energyType', "Type d’énergie",
+            '<option value="thermal"' + (scenario.energyType === 'thermal' ? ' selected' : '') + '>Thermique</option>' +
+            '<option value="electric"' + (isElectric ? ' selected' : '') + '>Électrique</option>', { effect: 'calculated' }) +
+          scenarioSelectField(scenario, 'acquisitionStatus', 'Statut',
+            '<option value="used"' + (scenario.acquisitionStatus === 'used' ? ' selected' : '') + '>Occasion</option>' +
+            '<option value="new"' + (scenario.acquisitionStatus === 'new' ? ' selected' : '') + '>Neuf</option>', { effect: 'calculated' }) +
+          scenarioNumberField(scenario, 'anneeMiseEnCirculation', 'Année de mise en circulation', 'année', 'calculated',
+            scenario.acquisitionStatus === 'used' && scenario.anneeMiseEnCirculation === null
+              ? 'Année manquante : repli sur les années de possession.' : '');
+        const purchaseFields =
+          scenarioNumberField(scenario, 'prixAchatNet', "Prix d’achat net", '€', 'cost') +
+          scenarioNumberField(scenario, 'taxeImmatriculation', "Taxe d’immatriculation", '€', 'cost') +
+          scenarioNumberField(scenario, 'fraisAchat', "Frais d’achat", '€', 'cost') +
+          scenarioNumberField(scenario, 'aideAchat', "Aide à l’achat", '€', 'saving') +
+          scenarioNumberField(scenario, 'remiseComplementaire', 'Remise complémentaire', '€', 'saving') +
+          scenarioNumberField(scenario, 'montantReprise', 'Reprise du véhicule', '€', 'saving') +
+          scenarioNumberField(scenario, 'kilometrageAchat', 'Kilométrage à l’achat', 'km', 'neutral');
+        const annualFields =
+          scenarioNumberField(scenario, 'kilometrageAnnuelOverride', 'Kilométrage annuel', 'km/an', 'calculated', '',
+            mileageForced ? {
+              value: state.settings.kilometrageTotalAnnuel, readonly: true, status: 'inherited'
+            } : null) +
+          scenarioNumberField(scenario, consumptionField, consumptionLabel, consumptionUnit, 'cost') +
+          scenarioNumberField(scenario, 'prixEnergieOverride', energyPriceLabel, energyPriceUnit, 'cost', '',
+            energyPriceForced ? {
+              value: forcedEnergyPrice, readonly: true, status: 'inherited'
+            } : null) +
+          scenarioNumberField(scenario, 'entretienAnnuel', 'Entretien annuel', '€/an', 'cost') +
+          scenarioNumberField(scenario, 'pneusAnnuel', 'Pneus annuels', '€/an', 'cost') +
+          scenarioNumberField(scenario, 'assuranceAnnuelle', 'Assurance annuelle', '€/an', 'cost') +
+          scenarioNumberField(scenario, 'ikAnnuelleRetenue', 'IK annuelles retenues', '€/an', 'saving', '',
+            ikForced ? { value: forcedIk, readonly: true, status: 'inherited' } : null);
+        const depreciationFields =
+          scenarioSelectField(scenario, 'depreciationType', 'Profil de décote', optionList(types, scenario.depreciationType), {
+            effect: 'calculated'
+          }) +
+          scenarioSelectField(scenario, 'depreciationLevel', 'Niveau de décote', optionList(levels, scenario.depreciationLevel), {
+            effect: 'calculated'
+          });
+        const displayOption = renderOptionBanner({
+          key: 'includeInCharts',
+          label: 'Inclure ce scénario dans les graphiques',
+          help: 'Le scénario reste calculé et visible dans les tableaux lorsqu’il est exclu.'
+        }, scenario.includeInCharts !== false,
+        'data-scenario-id="' + id + '" data-scenario-field="includeInCharts"');
         return '<article class="scenario-card ' + (isElectric ? 'electric' : 'thermal') + '" data-scenario-card="' + id + '">' +
-          '<div class="scenario-card-header"><strong>' + escapeHtml(scenario.name || 'Sans nom') + '</strong>' +
+          '<div class="scenario-card-header"><div><span class="scenario-type-label">' + (isElectric ? 'Électrique' : 'Thermique') +
+          ' · ' + (scenario.acquisitionStatus === 'new' ? 'Neuf' : 'Occasion') + '</span><strong data-scenario-title="' + id + '">' +
+          escapeHtml(scenario.name || 'Sans nom') + '</strong></div>' +
           '<div class="scenario-actions"><button class="button icon" type="button" data-scenario-action="duplicate" data-scenario-id="' + id + '">Dupliquer</button>' +
           '<button class="button icon danger-ghost" type="button" data-scenario-action="delete" data-scenario-id="' + id + '"' + (state.scenarios.length === 1 ? ' disabled' : '') + '>Supprimer</button></div></div>' +
-          '<div class="scenario-fields">' +
-          scenarioField('name-' + id, 'name', 'Nom du scénario', '<input id="name-' + id + '" type="text" data-scenario-id="' + id + '" data-scenario-field="name" value="' + escapeHtml(scenario.name) + '">', 'display') +
-          scenarioField('energy-' + id, 'energyType', "Type d'énergie", '<select id="energy-' + id + '" data-scenario-id="' + id + '" data-scenario-field="energyType"><option value="thermal"' + (scenario.energyType === 'thermal' ? ' selected' : '') + '>Thermique</option><option value="electric"' + (isElectric ? ' selected' : '') + '>Électrique</option></select>', 'used') +
-          scenarioField('status-' + id, 'acquisitionStatus', 'Statut', '<select id="status-' + id + '" data-scenario-id="' + id + '" data-scenario-field="acquisitionStatus"><option value="used"' + (scenario.acquisitionStatus === 'used' ? ' selected' : '') + '>Occasion</option><option value="new"' + (scenario.acquisitionStatus === 'new' ? ' selected' : '') + '>Neuf</option></select>', 'display') +
-          scenarioNumberField(scenario, 'anneeMiseEnCirculation', 'Année de mise en circulation', 'année', 'used',
-            scenario.acquisitionStatus === 'used' && scenario.anneeMiseEnCirculation === null
-              ? 'Année manquante : repli sur les années de possession.' : '') +
-          scenarioNumberField(scenario, 'kilometrageAchat', 'Kilométrage à l’achat', 'km', 'projection', 'Déjà intégré au prix : aucune pénalité initiale.') +
-          scenarioNumberField(scenario, 'kilometrageAnnuelOverride', 'Kilométrage annuel du scénario', 'km/an', 'used',
-            mileageForced ? 'Forcé par le kilométrage total annuel.' : 'Vide : utilise l’hypothèse commune.',
-            mileageForced ? { value: state.settings.kilometrageTotalAnnuel, disabled: true } : null) +
-          scenarioNumberField(scenario, 'prixAchatNet', "Prix d'achat net", '€', 'up') +
-          scenarioNumberField(scenario, 'taxeImmatriculation', "Taxe d'immatriculation", '€', 'up') +
-          scenarioNumberField(scenario, 'fraisAchat', "Frais d'achat", '€', 'up') +
-          scenarioNumberField(scenario, 'aideAchat', "Aide à l'achat", '€', 'down') +
-          scenarioNumberField(scenario, 'remiseComplementaire', 'Remise complémentaire', '€', 'down') +
-          scenarioNumberField(scenario, 'montantReprise', 'Montant de reprise du véhicule', '€', 'down',
-            'Déduit du coût d’acquisition et du TCO, sans modifier l’assiette de décote.') +
-          scenarioNumberField(scenario, 'entretienAnnuel', 'Entretien annuel', '€/an', 'up') +
-          scenarioNumberField(scenario, 'pneusAnnuel', 'Pneus annuels', '€/an', 'up') +
-          scenarioNumberField(scenario, 'assuranceAnnuelle', 'Assurance annuelle', '€/an', 'up') +
-          scenarioNumberField(scenario, 'ikAnnuelleRetenue', 'IK annuelle retenue', '€/an', 'down',
-            ikForced ? (isElectric ? 'Forcée : IK indicative + bonus électrique.' : 'Forcée : IK indicative.') : '',
-            ikForced ? { value: forcedIk, disabled: true } : null) +
-          scenarioNumberField(scenario, consumptionField, consumptionLabel, consumptionUnit, 'up') +
-          scenarioField('type-' + id, 'depreciationType', 'Profil de décote', '<select id="type-' + id + '" data-scenario-id="' + id + '" data-scenario-field="depreciationType">' + optionList(types, scenario.depreciationType) + '</select>', 'used') +
-          scenarioField('level-' + id, 'depreciationLevel', 'Niveau de décote', '<select id="level-' + id + '" data-scenario-id="' + id + '" data-scenario-field="depreciationLevel">' + optionList(levels, scenario.depreciationLevel) + '</select>', 'used') +
-          '<label class="check-field"><input type="checkbox" data-scenario-id="' + id + '" data-scenario-field="includeInCharts"' + (scenario.includeInCharts !== false ? ' checked' : '') + '> Inclure dans les graphiques ' + effectBadge('display') + '</label>' +
-          '</div></article>';
+          '<div class="scenario-form-sections">' +
+          renderFormSection({ id: 'scenario-' + sectionToken + '-identification', title: 'Identification',
+            help: 'Informations descriptives et point de départ du véhicule.', className: 'scenario-form-section',
+            body: '<div class="form-section-grid scenario-section-grid">' + identificationFields + '</div>' }) +
+          renderFormSection({ id: 'scenario-' + sectionToken + '-purchase', title: 'Achat et financement',
+            help: 'Montants payés ou déduits lors de l’acquisition.', className: 'scenario-form-section',
+            body: '<div class="form-section-grid scenario-section-grid">' + purchaseFields + '</div>' }) +
+          renderFormSection({ id: 'scenario-' + sectionToken + '-annual', title: 'Coûts annuels',
+            help: 'Hypothèses d’usage répétées sur l’horizon de calcul.', className: 'scenario-form-section',
+            body: '<div class="form-section-grid scenario-section-grid">' + annualFields + '</div>' }) +
+          renderFormSection({ id: 'scenario-' + sectionToken + '-depreciation', title: 'Décote',
+            help: 'La valeur projetée tient compte de l’âge réel et du profil sélectionné.', className: 'scenario-form-section',
+            body: '<div class="form-section-grid scenario-section-grid">' + depreciationFields + '</div>' }) +
+          renderFormSection({ id: 'scenario-' + sectionToken + '-display', title: 'Options d’affichage',
+            help: 'Ces options ne changent pas le calcul du scénario.', className: 'scenario-form-section scenario-display-section',
+            body: displayOption }) + '</div></article>';
       }).join('');
     }
 
@@ -508,17 +659,22 @@
         const valid = parsed === null || (Number.isFinite(parsed) && parsed >= 0 &&
           (field !== 'anneeMiseEnCirculation' || Number.isInteger(parsed)));
         input.setAttribute('aria-invalid', valid ? 'false' : 'true');
-        const error = document.getElementById('scenario-error-' + input.dataset.scenarioId + '-' + field);
+        const error = document.getElementById('scenario-error-' + domToken(input.dataset.scenarioId) + '-' + field);
         if (error) {
           error.classList.toggle('field-help', valid);
           if (!valid) error.textContent = field === 'anneeMiseEnCirculation' ? 'Saisissez une année entière.' : 'Saisissez un nombre positif ou nul.';
           else if (field === 'anneeMiseEnCirculation' && parsed === null && scenario.acquisitionStatus === 'used') error.textContent = 'Année manquante : repli sur les années de possession.';
-          else if (field === 'kilometrageAchat') error.textContent = 'Déjà intégré au prix : aucune pénalité initiale.';
-          else if (field === 'kilometrageAnnuelOverride' && parsed === null) error.textContent = 'Vide : utilise l’hypothèse commune.';
           else error.textContent = '';
         }
         scenario[field] = valid ? parsed : (SCENARIO_NULLABLE_FIELDS.has(field) ? null : 0);
       } else scenario[field] = input.value;
+
+      if (field === 'name') {
+        const title = Array.from(scenariosList.querySelectorAll('[data-scenario-title]')).find(function (element) {
+          return element.dataset.scenarioTitle === input.dataset.scenarioId;
+        });
+        if (title) title.textContent = scenario.name || 'Sans nom';
+      }
 
       if (field === 'depreciationType') {
         const levels = levelsFor(scenario.depreciationType);
@@ -750,14 +906,16 @@
     function renderIndicators() {
       const ik = TCO.calculations.calculateIkIndicators(state.settings);
       const forced = state.settings.forcerIkIndicatives === true;
-      document.getElementById('ik-indicators').innerHTML =
-        '<p class="indicator-intro"><span class="effect-badge effect-' + (forced ? 'used' : 'indicative') + '">' +
-        (forced ? 'Appliqué aux scénarios' : 'Indicatif uniquement') + '</span> ' +
-        (forced
+      document.getElementById('ik-indicators').innerHTML = renderCalculatedSummary({
+        status: forced ? 'calculated' : 'indicative',
+        help: forced
           ? 'Les scénarios thermiques reçoivent l’IK indicative ; les scénarios électriques reçoivent l’IK indicative majorée du bonus électrique.'
-          : 'Ces deux montants aident à renseigner les scénarios, mais ne modifient jamais le TCO automatiquement.') + '</p>' +
-        '<div class="indicator"><span>IK indicative annuelle</span><strong>' + formatCurrency(ik.ikIndicativeAnnuelle, 2) + '</strong></div>' +
-        '<div class="indicator"><span>Bonus électrique indicatif</span><strong>' + formatCurrency(ik.bonusIkElectriqueIndicatif, 2) + '</strong></div>';
+          : 'Ces montants restent de simples repères tant que leur application automatique est désactivée.',
+        items: [
+          { label: 'IK indicative annuelle', value: formatCurrency(ik.ikIndicativeAnnuelle, 2) },
+          { label: 'Bonus électrique indicatif', value: formatCurrency(ik.bonusIkElectriqueIndicatif, 2) }
+        ]
+      });
     }
 
     function renderSummary(results) {
@@ -863,6 +1021,10 @@
     formatCurrency: formatCurrency,
     formatNumber: formatNumber,
     getAnnualResultPresentation: getAnnualResultPresentation,
-    renderAnnualScenario: renderAnnualScenario
+    renderAnnualScenario: renderAnnualScenario,
+    renderFormField: renderFormField,
+    renderFormSection: renderFormSection,
+    renderOptionBanner: renderOptionBanner,
+    renderCalculatedSummary: renderCalculatedSummary
   };
 }(window.TCO = window.TCO || {}));

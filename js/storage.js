@@ -16,7 +16,9 @@
     scenarios: 'tcoApp.v1.scenarios',
     profiles: 'tcoApp.v1.depreciationProfiles'
   };
-  const BOOLEAN_SETTING_KEYS = new Set(['forcerKilometrageTotalAnnuel', 'forcerIkIndicatives']);
+  const BOOLEAN_SETTING_KEYS = new Set([
+    'forcerKilometrageTotalAnnuel', 'forcerPrixEnergie', 'forcerIkIndicatives'
+  ]);
 
   function read(key, fallback) {
     try {

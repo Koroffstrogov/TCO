@@ -10,15 +10,17 @@ Les navigateurs peuvent restreindre `localStorage` en navigation privée. L’ap
 
 ## Utilisation
 
-1. Renseignez les **hypothèses communes** : horizon, kilométrages, prix d’énergie et paramètres indicatifs d’IK.
-2. Décrivez chaque véhicule dans sa carte scénario : prix d’achat, année de mise en circulation, kilométrage à l’achat, frais, taxe, aides, montant de reprise, consommation et coûts annuels.
+1. Renseignez les **hypothèses communes**, organisées en quatre blocs : cadre de calcul, prix de l’énergie, repères IK et application aux scénarios.
+2. Décrivez chaque véhicule dans sa carte scénario, structurée en cinq sections : identification, achat et financement, coûts annuels, décote et options d’affichage.
 3. Sélectionnez un profil et un niveau de décote pour chaque scénario.
 4. Modifiez au besoin les dix taux du profil, indexés sur l’âge du véhicule, ou utilisez l’assistant **Profil de décote automatique**.
 5. Consultez la synthèse, le détail annuel par scénario, les graphiques de TCO et la courbe de valeur résiduelle, actualisés à chaque saisie.
 
 Les nombres acceptent la virgule ou le point décimal. Les pourcentages acceptent notamment `12`, `12%`, `12,5%` et `0.125` ; ils sont stockés sous forme de ratio (`0.12` pour 12 %). Un champ vide vaut temporairement zéro. Les saisies négatives ou hors limites sont signalées sans bloquer le reste de l’interface.
 
-L’interface qualifie les champs avec six repères : **↑ TCO** pour les coûts qui l’augmentent, **↓ TCO** pour les aides, remises, reprises et IK qui le réduisent, **Calcul** pour les informations utilisées sans effet toujours directionnel, **Indicatif** pour les simples repères qui ne sont jamais injectés automatiquement dans le TCO, **Projection** pour une information de suivi sans pénalité initiale, et **Hors TCO** pour la description ou l’affichage.
+Les champs partagent la même structure visuelle : libellé, contrôle de hauteur uniforme, unité alignée à droite et zone d’aide stable. Les accents colorés distinguent les coûts des réductions ou recettes. Quatre badges sémantiques sont réservés aux cas utiles : **Calculé**, **Indicatif**, **Hérité** et **Hors calcul**. Leur signification est disponible dans la légende compacte « Comprendre les indicateurs », repliée par défaut.
+
+Lorsque l’application globale du kilométrage, du prix de l’énergie ou des IK est activée, le champ correspondant de chaque scénario passe en lecture seule et affiche le badge **Hérité**. La valeur personnalisée reste conservée et redevient disponible lorsque l’application globale est désactivée.
 
 ## Sauvegarde, export et import
 
@@ -36,7 +38,7 @@ Lors d’une migration V2, un véhicule neuf sans année reçoit l’année cour
 
 ## Séparation des données V3
 
-Les hypothèses communes sont limitées à neuf valeurs partagées : horizon KPI, horizon recommandé, kilométrages total et professionnel, prix essence et électricité, barème IK indicatif, majoration électrique et coefficient de prudence.
+Les hypothèses communes comprennent neuf valeurs partagées — horizon KPI, horizon recommandé, kilométrages total et professionnel, prix essence et électricité, barème IK indicatif, majoration électrique et coefficient de prudence — ainsi que trois options d’application globale pour le kilométrage, le prix de l’énergie et les IK.
 
 Chaque scénario est la source de vérité pour son véhicule :
 
@@ -48,7 +50,7 @@ Chaque scénario est la source de vérité pour son véhicule :
 - énergie, statut et profil de décote ;
 - année de mise en circulation, kilométrage à l’achat et éventuel kilométrage annuel propre au scénario.
 
-Par défaut, deux véhicules de même énergie peuvent donc utiliser des hypothèses entièrement différentes. `kilometrageAnnuelOverride` et `prixEnergieOverride` acceptent `null` pour conserver l’hypothèse commune. La coche **Forcer ce kilométrage dans tous les scénarios** ignore temporairement les kilométrages propres aux scénarios sans les supprimer ; ils redeviennent modifiables lorsque la coche est retirée.
+Par défaut, deux véhicules de même énergie peuvent donc utiliser des hypothèses entièrement différentes. `kilometrageAnnuelOverride` et `prixEnergieOverride` acceptent `null` pour conserver l’hypothèse commune. Les coches d’application globale du kilométrage et du prix de l’énergie ignorent temporairement les valeurs propres aux scénarios sans les supprimer ; elles redeviennent modifiables lorsque la coche correspondante est retirée.
 
 ## Modèle de calcul
 

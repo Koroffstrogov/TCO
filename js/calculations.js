@@ -64,10 +64,12 @@
     const valeurResiduelle = finalDepreciationPoint.finalResidual;
     const coutDecote = assietteValeur - valeurResiduelle;
 
-    const prixEnergie = nonNegative(scenario.prixEnergieOverride === null ||
-      scenario.prixEnergieOverride === undefined
-      ? (isElectric ? settings.prixElectricite : settings.prixEssence)
-      : scenario.prixEnergieOverride);
+    const prixEnergieCommun = isElectric ? settings.prixElectricite : settings.prixEssence;
+    const prixEnergie = nonNegative(settings.forcerPrixEnergie === true
+      ? prixEnergieCommun
+      : (scenario.prixEnergieOverride === null || scenario.prixEnergieOverride === undefined
+        ? prixEnergieCommun
+        : scenario.prixEnergieOverride));
     const coutEnergieAnnuel = isElectric
       ? annualKm * nonNegative(scenario.consoElectriqueKwh100) / 100 * prixEnergie
       : annualKm * nonNegative(scenario.consoThermiqueL100) / 100 * prixEnergie;

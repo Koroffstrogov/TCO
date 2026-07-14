@@ -58,14 +58,17 @@
             <h2 id="settings-title">Hypothèses communes</h2>
           </div>
         </div>
-        <div class="effect-guide" aria-label="Légende des effets sur le TCO">
-          <span class="effect-badge effect-up">↑ TCO</span><span>coût qui augmente le TCO</span>
-          <span class="effect-badge effect-down">↓ TCO</span><span>montant qui réduit le TCO</span>
-          <span class="effect-badge effect-used">Calcul</span><span>utilisé, effet variable</span>
-          <span class="effect-badge effect-indicative">Indicatif</span><span>repère non injecté dans le TCO</span>
-          <span class="effect-badge effect-projection">Projection</span><span>sert au suivi, sans pénalité initiale</span>
-          <span class="effect-badge effect-display">Hors TCO</span><span>description ou affichage seulement</span>
-        </div>
+        <details class="indicator-guide">
+          <summary>Comprendre les indicateurs</summary>
+          <div class="indicator-guide-content" aria-label="Légende des effets et statuts des champs">
+            <p><span class="guide-swatch guide-cost" aria-hidden="true"></span><strong>Coût</strong><span>augmente le TCO.</span></p>
+            <p><span class="guide-swatch guide-saving" aria-hidden="true"></span><strong>Réduction ou recette</strong><span>diminue le TCO.</span></p>
+            <p><span class="field-status status-calculated">Calculé</span><span>utilisé pour produire un résultat.</span></p>
+            <p><span class="field-status status-indicative">Indicatif</span><span>repère sans effet automatique.</span></p>
+            <p><span class="field-status status-inherited">Hérité</span><span>valeur commune appliquée en lecture seule.</span></p>
+            <p><span class="field-status status-display">Hors calcul</span><span>sert uniquement à décrire ou afficher.</span></p>
+          </div>
+        </details>
         <form id="settings-form" novalidate></form>
       </section>
 
@@ -77,7 +80,7 @@
           </div>
           <button id="add-scenario-button" class="button small" type="button">Ajouter</button>
         </div>
-        <p class="scenario-effect-note"><span class="effect-badge effect-down">↓ TCO</span> Les aides, remises, reprises et IK sont déduites. <span class="effect-badge effect-up">↑ TCO</span> Les autres coûts s’ajoutent ou alimentent la décote.</p>
+        <p class="scenario-intro">Chaque carte regroupe les hypothèses d’un véhicule. Les valeurs héritées des hypothèses communes sont signalées et restent en lecture seule.</p>
         <div id="scenarios-list" class="scenario-list"></div>
       </section>
     </div>

@@ -11,6 +11,7 @@
     kilometrageProRembourseIk: 0,
     prixEssence: 0,
     prixElectricite: 0,
+    forcerPrixEnergie: false,
     baremeIkActuel: 0,
     majorationVehiculeElectrique: 0,
     coefficientPrudenceIk: 1,
