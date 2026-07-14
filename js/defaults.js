@@ -7,12 +7,14 @@
     horizonKpi: 5,
     horizonAnalyseRecommande: 5,
     kilometrageTotalAnnuel: 0,
+    forcerKilometrageTotalAnnuel: false,
     kilometrageProRembourseIk: 0,
     prixEssence: 0,
     prixElectricite: 0,
     baremeIkActuel: 0,
     majorationVehiculeElectrique: 0,
-    coefficientPrudenceIk: 1
+    coefficientPrudenceIk: 1,
+    forcerIkIndicatives: false
   });
 
   const DEFAULT_SCENARIOS = Object.freeze([

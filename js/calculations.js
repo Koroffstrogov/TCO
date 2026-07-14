@@ -46,8 +46,10 @@
     const rates = profile ? profile.rates : new Array(10).fill(0);
     const annualOverride = scenario.kilometrageAnnuelOverride === undefined
       ? scenario.kilometrageTotalAnnuelOverride : scenario.kilometrageAnnuelOverride;
-    const annualKm = nonNegative(annualOverride === null || annualOverride === undefined
-      ? settings.kilometrageTotalAnnuel : annualOverride);
+    const annualKm = nonNegative(settings.forcerKilometrageTotalAnnuel === true
+      ? settings.kilometrageTotalAnnuel
+      : (annualOverride === null || annualOverride === undefined
+      ? settings.kilometrageTotalAnnuel : annualOverride));
     const residualSeries = TCO.depreciation.computeAgeShiftedResidualSeries(
       assietteValeur,
       rates,
@@ -72,7 +74,10 @@
     const entretienAnnuel = nonNegative(scenario.entretienAnnuel);
     const pneusAnnuel = nonNegative(scenario.pneusAnnuel);
     const assuranceAnnuel = nonNegative(scenario.assuranceAnnuelle);
-    const ikRetenueAnnuelle = nonNegative(scenario.ikAnnuelleRetenue);
+    const ikIndicators = calculateIkIndicators(settings);
+    const ikRetenueAnnuelle = settings.forcerIkIndicatives === true
+      ? ikIndicators.ikIndicativeAnnuelle + (isElectric ? ikIndicators.bonusIkElectriqueIndicatif : 0)
+      : nonNegative(scenario.ikAnnuelleRetenue);
 
     const coutEnergieCumule = coutEnergieAnnuel * horizon;
     const entretienCumule = entretienAnnuel * horizon;

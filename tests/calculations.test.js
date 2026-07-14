@@ -51,7 +51,17 @@ function assertThreeAnnualReadings(result, label) {
 }
 
 assert.equal(state().version, 3);
-assert.equal(Object.keys(state().settings).length, 9, 'neuf hypothèses communes');
+assert.equal(Object.keys(state().settings).length, 11, 'onze hypothèses communes');
+assert.equal(state().settings.forcerKilometrageTotalAnnuel, false, 'forçage kilométrage désactivé par défaut');
+assert.equal(state().settings.forcerIkIndicatives, false, 'forçage IK désactivé par défaut');
+{
+  const data = state();
+  data.settings.forcerKilometrageTotalAnnuel = 'true';
+  data.settings.forcerIkIndicatives = 1;
+  const normalized = TCO.storage.normalizeState(data);
+  assert.equal(normalized.settings.forcerKilometrageTotalAnnuel, true, 'forçage kilométrage normalisé en booléen');
+  assert.equal(normalized.settings.forcerIkIndicatives, true, 'forçage IK normalisé en booléen');
+}
 ['prixAchatNet', 'fraisAchat', 'taxeImmatriculation', 'aideAchat',
   'remiseComplementaire', 'montantReprise', 'entretienAnnuel', 'pneusAnnuel',
   'assuranceAnnuelle', 'ikAnnuelleRetenue', 'anneeMiseEnCirculation',
@@ -239,6 +249,23 @@ assert.equal(Object.keys(state().settings).length, 9, 'neuf hypothèses communes
   close(result.coutEnergieCumule, 5400, 'énergie thermique cumulée');
 }
 
+// Le forçage kilométrique ignore l’override du scénario sans l’effacer du stockage.
+{
+  const data = state();
+  Object.assign(data.settings, {
+    horizonKpi: 1, kilometrageTotalAnnuel: 15000, prixElectricite: 0.25,
+    forcerKilometrageTotalAnnuel: true
+  });
+  Object.assign(data.scenarios[1], { kilometrageAnnuelOverride: 12000, consoElectriqueKwh100: 16 });
+  const forced = TCO.calculations.calculateScenarioTco(data.settings, data.scenarios[1], data.depreciationProfiles);
+  close(forced.kilometrageAnnuelUtilise, 15000, 'kilométrage commun forcé');
+  close(forced.coutEnergieAnnuel, 600, 'énergie calculée avec le kilométrage commun');
+  assert.equal(data.scenarios[1].kilometrageAnnuelOverride, 12000, 'override scénario conservé');
+  data.settings.forcerKilometrageTotalAnnuel = false;
+  const custom = TCO.calculations.calculateScenarioTco(data.settings, data.scenarios[1], data.depreciationProfiles);
+  close(custom.kilometrageAnnuelUtilise, 12000, 'override scénario restauré quand le forçage est retiré');
+}
+
 {
   const data = state();
   Object.assign(data.settings, { horizonKpi: 3, kilometrageTotalAnnuel: 15000, prixElectricite: 0.25 });
@@ -263,6 +290,26 @@ assert.equal(Object.keys(state().settings).length, 9, 'neuf hypothèses communes
   const electric = TCO.calculations.calculateScenarioTco(data.settings, data.scenarios[1], data.depreciationProfiles);
   close(thermal.ikRetenueCumulee, 15000, 'IK thermique retenue');
   close(electric.ikRetenueCumulee, 17000, 'IK électrique retenue');
+}
+
+// Le forçage des IK indicatives applique le bonus uniquement aux scénarios électriques.
+{
+  const data = state();
+  Object.assign(data.settings, {
+    horizonKpi: 2, kilometrageProRembourseIk: 10000, baremeIkActuel: 0.5,
+    coefficientPrudenceIk: 0.9, majorationVehiculeElectrique: 0.2,
+    forcerIkIndicatives: true
+  });
+  data.scenarios[0].ikAnnuelleRetenue = 123;
+  data.scenarios[1].ikAnnuelleRetenue = 456;
+  const thermal = TCO.calculations.calculateScenarioTco(data.settings, data.scenarios[0], data.depreciationProfiles);
+  const electric = TCO.calculations.calculateScenarioTco(data.settings, data.scenarios[1], data.depreciationProfiles);
+  close(thermal.ikRetenueAnnuelle, 4500, 'IK indicative forcée pour le thermique');
+  close(electric.ikRetenueAnnuelle, 5400, 'IK indicative et bonus forcés pour l’électrique');
+  close(thermal.ikRetenueCumulee, 9000, 'IK thermique forcée sur l’horizon');
+  close(electric.ikRetenueCumulee, 10800, 'IK électrique forcée sur l’horizon');
+  assert.equal(data.scenarios[0].ikAnnuelleRetenue, 123, 'IK thermique personnalisée conservée');
+  assert.equal(data.scenarios[1].ikAnnuelleRetenue, 456, 'IK électrique personnalisée conservée');
 }
 
 {

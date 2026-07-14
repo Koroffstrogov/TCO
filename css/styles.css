@@ -82,7 +82,7 @@ code { padding: .12rem .3rem; background: #edf2f0; border-radius: 5px; }
 .summary-detail { margin-bottom: 0; color: var(--muted); font-size: .8rem; }
 .best .summary-detail { color: rgba(255,255,255,.75); }
 
-.indicator-strip { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: .55rem; margin-bottom: 1rem; }
+.indicator-strip { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: .55rem; margin-top: .85rem; }
 .indicator-intro { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: .78rem; }
 .indicator { padding: .65rem .75rem; background: #edf5f6; border-radius: 9px; }
 .indicator span { display: block; color: var(--muted); font-size: .72rem; }
@@ -112,6 +112,9 @@ input[type="text"], select { width: 100%; min-height: 2.45rem; padding: .5rem .6
 input[aria-invalid="true"] { border-color: var(--danger); background: #fff7f7; }
 .field-error { min-height: 1.1rem; margin: .18rem 0 0; color: var(--danger); font-size: .7rem; }
 .field-error.field-help { color: var(--muted); }
+.field .settings-toggle { display: flex; align-items: flex-start; justify-content: flex-start; gap: .48rem; margin: .45rem 0 0; padding: .45rem .5rem; color: var(--ink); background: #f7f9f8; border: 1px solid var(--line); border-radius: 8px; font-size: .72rem; font-weight: 750; line-height: 1.3; }
+.settings-toggle input { flex: 0 0 auto; width: 1rem; height: 1rem; margin-top: .05rem; accent-color: var(--brand); }
+.settings-toggle small { display: block; margin-top: .12rem; color: var(--muted); font-size: .65rem; font-weight: 500; }
 
 .scenario-list { display: grid; gap: .8rem; }
 .scenario-effect-note { margin: -.35rem 0 .85rem; color: var(--muted); font-size: .76rem; }

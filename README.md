@@ -48,7 +48,7 @@ Chaque scénario est la source de vérité pour son véhicule :
 - énergie, statut et profil de décote ;
 - année de mise en circulation, kilométrage à l’achat et éventuel kilométrage annuel propre au scénario.
 
-Deux véhicules de même énergie peuvent donc utiliser des hypothèses entièrement différentes. `kilometrageAnnuelOverride` et `prixEnergieOverride` acceptent `null` pour conserver l’hypothèse commune.
+Par défaut, deux véhicules de même énergie peuvent donc utiliser des hypothèses entièrement différentes. `kilometrageAnnuelOverride` et `prixEnergieOverride` acceptent `null` pour conserver l’hypothèse commune. La coche **Forcer ce kilométrage dans tous les scénarios** ignore temporairement les kilométrages propres aux scénarios sans les supprimer ; ils redeviennent modifiables lorsque la coche est retirée.
 
 ## Modèle de calcul
 
@@ -84,7 +84,7 @@ décote + frais d’achat + taxe d’immatriculation
 + énergie cumulée + entretien cumulé + pneus cumulés + assurance cumulée
 ```
 
-Le TCO net soustrait ensuite `scenario.montantReprise`, puis `scenario.ikAnnuelleRetenue × horizon`. Le coût annuel divise ce résultat par l’horizon ; le coût par kilomètre le divise par le kilométrage total utilisé pour ce scénario. La référence de comparaison est le premier scénario thermique inclus, ou à défaut le premier scénario inclus. L’IK indicative et son bonus électrique restent de simples repères communs : ils n’écrasent jamais l’IK retenue d’un scénario.
+Le TCO net soustrait ensuite `scenario.montantReprise`, puis `scenario.ikAnnuelleRetenue × horizon`. Le coût annuel divise ce résultat par l’horizon ; le coût par kilomètre le divise par le kilométrage total utilisé pour ce scénario. La référence de comparaison est le premier scénario thermique inclus, ou à défaut le premier scénario inclus. Par défaut, l’IK indicative et son bonus électrique restent de simples repères communs. Avec la coche **Appliquer les IK indicatives aux scénarios**, l’IK retenue est forcée à l’IK indicative pour un thermique, et à l’IK indicative augmentée du bonus pour un électrique ; les montants personnalisés restent conservés et reviennent dès que la coche est retirée.
 
 ## Vérification
 
