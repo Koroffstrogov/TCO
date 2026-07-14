@@ -135,6 +135,10 @@ input[aria-invalid="true"] { border-color: var(--danger); background: #fff7f7; }
 .form-option-banner strong, .form-option-banner small { display: block; }
 .form-option-banner small { margin-top: .08rem; color: var(--muted); font-size: .64rem; }
 .scenario-display-section .form-option-banner { margin-top: 0; }
+.form-subsection { margin-top: .55rem; padding-top: .5rem; border-top: 1px solid var(--line); }
+.form-subsection-heading { display: flex; align-items: baseline; justify-content: space-between; gap: .55rem; margin-bottom: .35rem; }
+.form-subsection-heading h4 { margin: 0; color: var(--brand-dark); font-size: .78rem; }
+.form-subsection-heading p { margin: 0; color: var(--muted); font-size: .64rem; text-align: right; }
 .calculated-summary { margin-top: .05rem; padding: .55rem .6rem; background: #edf5f6; border-radius: 8px; }
 .calculated-summary-heading { display: flex; align-items: center; gap: .45rem; margin-bottom: .4rem; }
 .calculated-summary-heading p { margin: 0; color: var(--muted); font-size: .66rem; }
@@ -266,6 +270,9 @@ tbody tr:hover { background: #f8faf9; }
 .chart-empty { font-size: 15px; }
 .chart-bar { transition: opacity .15s; }
 .chart-bar:hover { opacity: .78; }
+.chart-net-marker { stroke: var(--ink); stroke-width: 2.4; }
+.chart-net-point { fill: #fff; stroke: var(--ink); stroke-width: 2; }
+.chart-net-value { fill: var(--ink); font-weight: 850; }
 
 .app-footer { padding: 0 1rem 2rem; color: var(--muted); font-size: .78rem; text-align: center; }
 
@@ -298,6 +305,8 @@ tbody tr:hover { background: #f8faf9; }
   .panel { border-radius: 13px; }
   .section-heading { align-items: flex-start; }
   .common-fields, .scenario-section-grid, .calculated-summary-grid, .indicator-guide-content { grid-template-columns: 1fr; }
+  .form-subsection-heading { align-items: flex-start; flex-direction: column; gap: .08rem; }
+  .form-subsection-heading p { text-align: left; }
   .indicator-guide-content p { grid-template-columns: auto max-content minmax(0, 1fr); }
   .indicator-guide-content p:has(.field-status) { grid-template-columns: max-content minmax(0, 1fr); }
   .automatic-depreciation-grid { grid-template-columns: 1fr; }

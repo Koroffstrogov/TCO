@@ -195,10 +195,34 @@
     }).join(' ; '));
   }
 
+  function calculateCostBreakdownGeometry(results, width) {
+    const labelWidth = 165;
+    const plotLeft = labelWidth + 10;
+    const plotRight = width - 30;
+    const plotWidth = plotRight - plotLeft;
+    const maxGross = Math.max(0, Math.max.apply(null, results.map(function (result) {
+      return Number(result.tcoBrut) || 0;
+    })));
+    const maxDeductions = Math.max(0, Math.max.apply(null, results.map(function (result) {
+      return (Number(result.montantReprise) || 0) + (Number(result.ikRetenueCumulee) || 0);
+    })));
+    const scale = plotWidth / (maxGross + maxDeductions || 1);
+    return {
+      labelWidth: labelWidth,
+      plotLeft: plotLeft,
+      plotRight: plotRight,
+      plotWidth: plotWidth,
+      maxGross: maxGross,
+      maxDeductions: maxDeductions,
+      scale: scale,
+      zeroX: plotLeft + maxDeductions * scale
+    };
+  }
+
   function renderCostBreakdownChart(container, allResults) {
     const results = (allResults || []).filter(function (result) { return result.includeInCharts; });
     const width = 900;
-    const height = Math.max(330, 152 + results.length * 62);
+    const height = Math.max(350, 172 + results.length * 62);
     const svg = setup(container, width, height, results.length ? '' : 'Aucun scénario inclus');
     if (!results.length) return;
     const components = [
@@ -206,60 +230,96 @@
       ['Énergie', 'coutEnergieCumule', '#d97736'], ['Entretien', 'entretienCumule', '#2f855a'],
       ['Pneus', 'pneusCumule', '#6d5cae'], ['Assurance', 'assuranceCumule', '#be4b5e']
     ];
-    const labelWidth = 165;
-    const deductionWidth = 140;
-    const positiveStart = labelWidth + deductionWidth + 25;
-    const positiveWidth = width - positiveStart - 30;
-    const maxGross = Math.max(1, Math.max.apply(null, results.map(function (r) { return r.tcoBrut; })));
-    const maxDeductions = Math.max(1, Math.max.apply(null, results.map(function (r) {
-      return r.montantReprise + r.ikRetenueCumulee;
-    })));
+    const geometry = calculateCostBreakdownGeometry(results, width);
+
+    svg.appendChild(svgElement('line', {
+      x1: geometry.zeroX, y1: 30, x2: geometry.zeroX,
+      y2: 48 + results.length * 62 - 30, class: 'chart-axis'
+    }));
+    svg.appendChild(svgElement('text', {
+      x: geometry.zeroX, y: 17, 'text-anchor': 'middle', class: 'chart-tick'
+    }, '0 €'));
+    if (geometry.zeroX - geometry.plotLeft > 90) {
+      svg.appendChild(svgElement('text', {
+        x: geometry.plotLeft, y: 17, 'text-anchor': 'start', class: 'chart-tick'
+      }, money(-geometry.maxDeductions)));
+    }
+    if (geometry.plotRight - geometry.zeroX > 90) {
+      svg.appendChild(svgElement('text', {
+        x: geometry.plotRight, y: 17, 'text-anchor': 'end', class: 'chart-tick'
+      }, money(geometry.maxGross)));
+    }
+    svg.appendChild(svgElement('text', { x: geometry.zeroX - 8, y: 34, 'text-anchor': 'end', class: 'chart-note' }, 'Reprise + IK déduites ←'));
+    svg.appendChild(svgElement('text', { x: geometry.zeroX + 8, y: 34, class: 'chart-note' }, 'Coûts bruts →'));
 
     results.forEach(function (result, row) {
-      const y = 34 + row * 62;
-      svg.appendChild(svgElement('text', { x: labelWidth - 10, y: y + 18, 'text-anchor': 'end', class: 'chart-label' }, shortName(result.name, 22)));
-      let deductionCursor = positiveStart;
+      const y = 48 + row * 62;
+      svg.appendChild(svgElement('text', { x: geometry.labelWidth - 10, y: y + 17, 'text-anchor': 'end', class: 'chart-label' }, shortName(result.name, 22)));
+      let deductionCursor = geometry.zeroX;
       [
         ['Reprise', result.montantReprise, '#0f766e'],
         ['IK', result.ikRetenueCumulee, '#334155']
       ].forEach(function (deduction) {
-        const segmentWidth = deduction[1] / maxDeductions * deductionWidth;
+        const segmentWidth = Math.max(0, Number(deduction[1]) || 0) * geometry.scale;
         deductionCursor -= segmentWidth;
         if (segmentWidth > 0) {
-          const rect = svgElement('rect', { x: deductionCursor, y: y, width: segmentWidth, height: 26, fill: deduction[2], opacity: 0.82 });
+          const rect = svgElement('rect', { x: deductionCursor, y: y, width: segmentWidth, height: 24, fill: deduction[2], opacity: 0.82 });
           rect.appendChild(svgElement('title', {}, deduction[0] + ' déduite : ' + money(deduction[1])));
           svg.appendChild(rect);
         }
       });
-      let cursor = positiveStart;
+      let cursor = geometry.zeroX;
       components.forEach(function (component) {
         const value = component[1] === 'fees' ? result.fraisAchat + result.taxes : result[component[1]];
-        const segmentWidth = Math.max(0, value / maxGross * positiveWidth);
+        const segmentWidth = Math.max(0, Number(value) || 0) * geometry.scale;
         if (segmentWidth > 0) {
-          const rect = svgElement('rect', { x: cursor, y: y, width: segmentWidth, height: 26, fill: component[2] });
+          const rect = svgElement('rect', { x: cursor, y: y, width: segmentWidth, height: 24, fill: component[2] });
           rect.appendChild(svgElement('title', {}, component[0] + ' : ' + money(value)));
           svg.appendChild(rect);
         }
         cursor += segmentWidth;
       });
-      svg.appendChild(svgElement('text', { x: Math.min(width - 5, cursor + 7), y: y + 18, class: 'chart-value' }, money(result.tcoNetApresIk) + ' net'));
+      const netX = geometry.zeroX + (Number(result.tcoNetApresIk) || 0) * geometry.scale;
+      svg.appendChild(svgElement('line', {
+        x1: netX, y1: y - 4, x2: netX, y2: y + 30, class: 'chart-net-marker'
+      }));
+      const netPoint = svgElement('circle', {
+        cx: netX, cy: y + 12, r: 4, class: 'chart-net-point'
+      });
+      netPoint.appendChild(svgElement('title', {}, 'Résultat net : ' + money(result.tcoNetApresIk)));
+      svg.appendChild(netPoint);
+      const nearLeft = netX < geometry.plotLeft + 75;
+      const nearRight = netX > geometry.plotRight - 75;
+      svg.appendChild(svgElement('text', {
+        x: netX + (nearLeft ? 5 : (nearRight ? -5 : 0)), y: y + 43,
+        'text-anchor': nearLeft ? 'start' : (nearRight ? 'end' : 'middle'), class: 'chart-value chart-net-value'
+      }, money(result.tcoNetApresIk) + ' net'));
     });
-    svg.appendChild(svgElement('line', { x1: positiveStart, y1: 20, x2: positiveStart, y2: 34 + results.length * 62 - 25, class: 'chart-axis' }));
-    svg.appendChild(svgElement('text', { x: positiveStart - 8, y: 20, 'text-anchor': 'end', class: 'chart-note' }, 'Reprise + IK déduites ←'));
-    svg.appendChild(svgElement('text', { x: positiveStart + 8, y: 20, class: 'chart-note' }, 'Coûts bruts →'));
-    [['Reprise', '', '#0f766e'], ['IK', '', '#334155']].concat(components).forEach(function (component, index) {
-      const legendX = 20 + (index % 4) * 210;
-      const legendY = height - 43 + Math.floor(index / 4) * 22;
-      svg.appendChild(svgElement('rect', { x: legendX, y: legendY - 10, width: 12, height: 12, rx: 2, fill: component[2] }));
+    const legendItems = [['Reprise', '', '#0f766e'], ['IK', '', '#334155']].concat(components)
+      .concat([['Résultat net', '', '#17242b', 'net']]);
+    legendItems.forEach(function (component, index) {
+      const legendX = 20 + (index % 5) * 172;
+      const legendY = height - 32 + Math.floor(index / 5) * 22;
+      if (component[3] === 'net') {
+        svg.appendChild(svgElement('line', {
+          x1: legendX + 6, y1: legendY - 12, x2: legendX + 6, y2: legendY + 2, class: 'chart-net-marker'
+        }));
+        svg.appendChild(svgElement('circle', {
+          cx: legendX + 6, cy: legendY - 5, r: 3, class: 'chart-net-point'
+        }));
+      } else {
+        svg.appendChild(svgElement('rect', { x: legendX, y: legendY - 10, width: 12, height: 12, rx: 2, fill: component[2] }));
+      }
       svg.appendChild(svgElement('text', { x: legendX + 18, y: legendY, class: 'chart-label' }, component[0]));
     });
-    container.setAttribute('aria-label', 'Décomposition des coûts bruts, reprises et IK déduites par scénario');
+    container.setAttribute('aria-label', 'Décomposition à échelle commune des coûts bruts, reprises et IK déduites, avec position du résultat net par scénario');
   }
 
   TCO.charts = {
     renderTcoBarChart: renderTcoBarChart,
     renderCumulativeTcoChart: renderCumulativeTcoChart,
     renderResidualValueChart: renderResidualValueChart,
-    renderCostBreakdownChart: renderCostBreakdownChart
+    renderCostBreakdownChart: renderCostBreakdownChart,
+    calculateCostBreakdownGeometry: calculateCostBreakdownGeometry
   };
 }(window.TCO = window.TCO || {}));

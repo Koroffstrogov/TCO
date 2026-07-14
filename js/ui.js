@@ -40,18 +40,15 @@
         { key: 'majorationVehiculeElectrique', label: 'Majoration électrique', unit: '%', type: 'percent', effect: 'indicative', status: 'indicative' },
         { key: 'coefficientPrudenceIk', label: 'Coefficient de prudence', unit: 'coefficient', type: 'number', effect: 'indicative', status: 'indicative' },
         { key: 'horizonAnalyseRecommande', label: 'Horizon conseillé', unit: 'années', type: 'integer', effect: 'indicative', status: 'indicative' }
-      ]
-    },
-    {
-      id: 'scenario-application',
-      title: 'Application aux scénarios',
-      help: 'Synthèse des IK calculées et choix de leur application automatique.',
-      fields: [],
-      calculatedSummary: true,
-      option: {
-        key: 'forcerIkIndicatives',
-        label: 'Appliquer automatiquement les IK indicatives',
-        help: 'Thermique : IK indicative. Électrique : IK indicative + bonus électrique.'
+      ],
+      application: {
+        title: 'Application aux scénarios',
+        help: 'Synthèse des IK calculées et choix de leur application automatique.',
+        option: {
+          key: 'forcerIkIndicatives',
+          label: 'Appliquer automatiquement les IK indicatives',
+          help: 'Thermique : IK indicative. Électrique : IK indicative + bonus électrique.'
+        }
       }
     }
   ];
@@ -402,8 +399,12 @@
               '<span class="unit">' + escapeHtml(field.unit) + '</span></div>'
           });
         }).join('');
-        const indicators = section.calculatedSummary
-          ? '<div id="ik-indicators" class="calculated-summary" aria-live="polite"></div>'
+        const application = section.application
+          ? '<div class="form-subsection"><div class="form-subsection-heading"><h4>' +
+            escapeHtml(section.application.title) + '</h4><p>' + escapeHtml(section.application.help) +
+            '</p></div><div id="ik-indicators" class="calculated-summary" aria-live="polite"></div>' +
+            renderOptionBanner(section.application.option,
+              state.settings[section.application.option.key] === true) + '</div>'
           : '';
         const option = section.option
           ? renderOptionBanner(section.option, state.settings[section.option.key] === true)
@@ -412,8 +413,7 @@
           id: 'settings-' + section.id,
           title: section.title,
           help: section.help,
-          className: section.calculatedSummary ? 'form-section-application' : '',
-          body: (fields ? '<div class="form-section-grid common-fields">' + fields + '</div>' : '') + indicators + option
+          body: (fields ? '<div class="form-section-grid common-fields">' + fields + '</div>' : '') + application + option
         });
       }).join('');
     }

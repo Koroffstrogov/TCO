@@ -16,7 +16,7 @@ const context = {
 };
 context.window.window = context.window;
 vm.createContext(context);
-['js/defaults.js', 'js/depreciation.js', 'js/storage.js', 'js/calculations.js', 'js/ui.js'].forEach((file) => {
+['js/defaults.js', 'js/depreciation.js', 'js/storage.js', 'js/calculations.js', 'js/charts.js', 'js/ui.js'].forEach((file) => {
   vm.runInContext(fs.readFileSync(path.join(root, file), 'utf8'), context, { filename: file });
 });
 const TCO = context.window.TCO;
@@ -24,6 +24,28 @@ const TCO = context.window.TCO;
 function state() { return TCO.defaults.createDefaultState(); }
 function close(actual, expected, label) {
   assert.ok(Math.abs(actual - expected) < 1e-8, `${label}: ${actual} !== ${expected}`);
+}
+
+// Le graphique de décomposition utilise une seule échelle monétaire des deux côtés de zéro.
+{
+  const geometry = TCO.charts.calculateCostBreakdownGeometry([
+    { tcoBrut: 20000, montantReprise: 2000, ikRetenueCumulee: 3000 },
+    { tcoBrut: 10000, montantReprise: 4000, ikRetenueCumulee: 6000 }
+  ], 900);
+  close(geometry.plotWidth, 695, 'largeur utile du graphique de décomposition');
+  close(geometry.scale, 695 / 30000, 'échelle monétaire unique');
+  const expectedWidthFor1000 = 695 / 30;
+  close(1000 * geometry.scale, expectedWidthFor1000, 'largeur de 1 000 € côté coûts');
+  close(1000 * geometry.scale, expectedWidthFor1000, 'largeur de 1 000 € côté déductions');
+  const gross = 20000;
+  const deductions = 5000;
+  const net = gross - deductions;
+  const grossEnd = geometry.zeroX + gross * geometry.scale;
+  const deductionWidth = deductions * geometry.scale;
+  const netX = geometry.zeroX + net * geometry.scale;
+  close(netX, grossEnd - deductionWidth, 'position du résultat net sur la même échelle');
+  assert.ok(geometry.zeroX >= geometry.plotLeft && geometry.zeroX <= geometry.plotRight, 'axe zéro dans la zone utile');
+  assert.ok(netX >= geometry.plotLeft && netX <= geometry.plotRight, 'marqueur net dans la zone utile');
 }
 function assertAnnualReconciliation(result, label) {
   const detail = result.decompositionAnnuelle;
@@ -114,6 +136,9 @@ assert.equal(state().settings.forcerIkIndicatives, false, 'forçage IK désactiv
   assert.match(uiSource, /'Kilométrage annuel'/);
   assert.doesNotMatch(uiSource, /Kilométrage annuel du scénario/);
   assert.doesNotMatch(uiSource, /Prix (?:essence|électricité) du scénario/);
+  assert.match(uiSource, /application: \{\s*title: 'Application aux scénarios'/);
+  assert.doesNotMatch(uiSource, /id: 'scenario-application'/);
+  assert.match(uiSource, /class="form-subsection"/);
 
   const htmlSource = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   assert.match(htmlSource, /<details class="indicator-guide">/);

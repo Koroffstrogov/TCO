@@ -10,11 +10,13 @@ Les navigateurs peuvent restreindre `localStorage` en navigation privée. L’ap
 
 ## Utilisation
 
-1. Renseignez les **hypothèses communes**, organisées en quatre blocs : cadre de calcul, prix de l’énergie, repères IK et application aux scénarios.
+1. Renseignez les **hypothèses communes**, organisées en trois blocs : cadre de calcul, prix de l’énergie et repères IK. L’application automatique des IK se règle directement dans le bloc Repères IK.
 2. Décrivez chaque véhicule dans sa carte scénario, structurée en cinq sections : identification, achat et financement, coûts annuels, décote et options d’affichage.
 3. Sélectionnez un profil et un niveau de décote pour chaque scénario.
 4. Modifiez au besoin les dix taux du profil, indexés sur l’âge du véhicule, ou utilisez l’assistant **Profil de décote automatique**.
 5. Consultez la synthèse, le détail annuel par scénario, les graphiques de TCO et la courbe de valeur résiduelle, actualisés à chaque saisie.
+
+Dans le graphique **Décomposition des coûts à l’horizon**, les coûts bruts et les déductions utilisent la même échelle en euros par pixel autour de l’axe zéro. Un marqueur distinct positionne le résultat net après reprise et IK pour chaque scénario.
 
 Les nombres acceptent la virgule ou le point décimal. Les pourcentages acceptent notamment `12`, `12%`, `12,5%` et `0.125` ; ils sont stockés sous forme de ratio (`0.12` pour 12 %). Un champ vide vaut temporairement zéro. Les saisies négatives ou hors limites sont signalées sans bloquer le reste de l’interface.
 
