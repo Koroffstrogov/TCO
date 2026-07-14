@@ -319,17 +319,55 @@ assert.equal(Object.keys(state().settings).length, 9, 'neuf hypothèses communes
   close(TCO.depreciation.normalizeRate(value), 0.12, `normalisation de ${value}`);
 });
 
-// Profil de décote automatique par interpolation exponentielle.
+// Profil de décote automatique par interpolation exponentielle, avec trois formes.
 {
-  const generated = TCO.depreciation.calculerProfilDecote(45000, 25000, 5);
-  close(generated.tauxDecoteAnnuel, 1 - Math.pow(25000 / 45000, 1 / 5), 'taux composé automatique');
-  assert.ok(Math.abs(generated.tauxDecoteAnnuel - 0.111) < 0.001, 'taux automatique proche de 11,1 %');
-  assert.equal(generated.profil.length, 6);
-  assert.equal(generated.profil[0].annee, 0);
-  assert.equal(generated.profil[0].prix, 45000, 'prix initial exact');
-  assert.equal(generated.profil[5].prix, 25000, 'prix final exact');
-  assert.equal(generated.profil[2].prix, Math.round(45000 * Math.pow(25000 / 45000, 2 / 5)), 'interpolation composée année 2');
-  close(generated.profil[3].decoteDepuisDepart, 1 - Math.pow(25000 / 45000, 3 / 5), 'décote cumulée année 3');
+  const ratio = 25000 / 45000;
+  const expectedEquivalentRate = 1 - Math.pow(ratio, 1 / 5);
+  const defaultConstant = TCO.depreciation.calculerProfilDecote(45000, 25000, 5);
+  const constant = TCO.depreciation.calculerProfilDecote(45000, 25000, 5, 'constant', 10);
+  const accelerated = TCO.depreciation.calculerProfilDecote(45000, 25000, 5, 'debutAccelere', 10);
+  const strong = TCO.depreciation.calculerProfilDecote(45000, 25000, 5, 'initialeForte', 10);
+
+  assert.deepEqual(Object.keys(TCO.depreciation.PROFILS_FORME_DECOTE), ['constant', 'debutAccelere', 'initialeForte']);
+  assert.equal(TCO.depreciation.PROFILS_FORME_DECOTE.constant.coefficient, 1);
+  assert.equal(TCO.depreciation.PROFILS_FORME_DECOTE.debutAccelere.coefficient, 0.85);
+  assert.equal(TCO.depreciation.PROFILS_FORME_DECOTE.initialeForte.coefficient, 0.65);
+  assert.equal(defaultConstant.profil.length, 6, 'la projection par défaut s’arrête à l’année cible');
+  assert.deepEqual(defaultConstant.profil, constant.profil.slice(0, 6), 'le profil constant reste compatible avec l’existant');
+
+  [constant, accelerated, strong].forEach((generated) => {
+    close(generated.tauxDecoteAnnuel, expectedEquivalentRate, 'alias du taux moyen équivalent');
+    close(generated.tauxAnnuelMoyenEquivalent, expectedEquivalentRate, 'taux annuel moyen équivalent');
+    assert.ok(Math.abs(generated.tauxAnnuelMoyenEquivalent - 0.1109) < 0.0001, 'taux automatique proche de 11,09 %');
+    assert.equal(generated.profil.length, 11, 'projection complète de l’année 0 à l’année 10');
+    assert.equal(generated.profil[0].annee, 0);
+    assert.equal(generated.profil[0].prix, 45000, 'prix initial exact');
+    assert.equal(generated.profil[5].prix, 25000, 'prix cible exact');
+    assert.equal(generated.profil[10].annee, 10, 'courbe prolongée après l’année cible');
+
+    const reconstructedTarget = generated.profil.slice(1, 6).reduce(function (price, point) {
+      return price * (1 - point.tauxDecoteAnnuelReel);
+    }, 45000);
+    close(reconstructedTarget, 25000, 'les taux annuels réels atteignent exactement la cible');
+  });
+
+  assert.equal(constant.profilForme, 'constant');
+  assert.equal(constant.libelleProfilForme, 'Taux annuel constant');
+  assert.equal(constant.coefficientForme, 1);
+  assert.equal(constant.nombreAnnees, 5);
+  assert.equal(constant.nombreAnneesProjection, 10);
+  assert.equal(constant.profil[2].prix, Math.round(45000 * Math.pow(ratio, 2 / 5)), 'trajectoire constante inchangée');
+  close(constant.profil[3].decoteDepuisDepart, 1 - Math.pow(ratio, 3 / 5), 'décote cumulée constante année 3');
+  constant.profil.slice(1).forEach((point) => {
+    close(point.tauxDecoteAnnuelReel, expectedEquivalentRate, 'taux réel constant');
+  });
+
+  assert.ok(accelerated.profil[1].prix < constant.profil[1].prix, 'c = 0,85 accélère légèrement la décote initiale');
+  assert.ok(strong.profil[1].prix < accelerated.profil[1].prix, 'c = 0,65 accentue davantage la décote initiale');
+  assert.ok(accelerated.profil[1].tauxDecoteAnnuelReel > constant.profil[1].tauxDecoteAnnuelReel);
+  assert.ok(strong.profil[1].tauxDecoteAnnuelReel > accelerated.profil[1].tauxDecoteAnnuelReel);
+  assert.ok(accelerated.profil[1].tauxDecoteAnnuelReel > accelerated.profil[5].tauxDecoteAnnuelReel, 'la décote c = 0,85 ralentit');
+  assert.ok(strong.profil[1].tauxDecoteAnnuelReel > strong.profil[5].tauxDecoteAnnuelReel, 'la décote c = 0,65 ralentit');
 }
 
 [
@@ -344,6 +382,21 @@ assert.equal(Object.keys(state().settings).length, 9, 'neuf hypothèses communes
   [25000, 45000, 5, /inférieur ou égal/]
 ].forEach((testCase) => {
   assert.throws(() => TCO.depreciation.calculerProfilDecote(testCase[0], testCase[1], testCase[2]), testCase[3]);
+});
+
+assert.throws(
+  () => TCO.depreciation.calculerProfilDecote(45000, 25000, 5, 'inconnu'),
+  /profil de forme de décote est invalide/
+);
+[
+  [4, /projection/],
+  [10.5, /projection/],
+  [11, /projection/]
+].forEach((testCase) => {
+  assert.throws(
+    () => TCO.depreciation.calculerProfilDecote(45000, 25000, 5, 'constant', testCase[0]),
+    testCase[1]
+  );
 });
 
 assert.equal(TCO.defaults.DEFAULT_DEPRECIATION_PROFILES.length, 12);

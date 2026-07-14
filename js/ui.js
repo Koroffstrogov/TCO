@@ -77,6 +77,7 @@
     const editor = document.getElementById('depreciation-editor');
     const automaticDepreciationForm = document.getElementById('automatic-depreciation-form');
     const automaticProfileTarget = document.getElementById('automatic-profile-target');
+    const automaticShapeProfile = document.getElementById('automatic-shape-profile');
     const automaticStartPrice = document.getElementById('automatic-start-price');
     const automaticEstimatedPrice = document.getElementById('automatic-estimated-price');
     const automaticYears = document.getElementById('automatic-years');
@@ -328,13 +329,17 @@
 
     function renderAutomaticDepreciationPreview(generated, profile) {
       const rows = generated.profil.map(function (point) {
-        return '<tr><th scope="row">Année ' + point.annee + '</th><td>' + formatCurrency(point.prix) + '</td><td>' +
+        const isTarget = point.annee === generated.nombreAnnees;
+        const annualRate = point.annee === 0 ? '—' : TCO.depreciation.formatRate(point.tauxDecoteAnnuelReel);
+        return '<tr' + (isTarget ? ' class="automatic-target-row"' : '') + '><th scope="row">Année ' + point.annee +
+          (isTarget ? ' · cible' : '') + '</th><td>' + formatCurrency(point.prix) + '</td><td>' + annualRate + '</td><td>' +
           TCO.depreciation.formatRate(point.decoteDepuisDepart) + '</td></tr>';
       }).join('');
-      automaticDepreciationPreview.innerHTML = '<div class="automatic-rate-summary"><span>Taux de décote annuel moyen</span><strong>' +
-        TCO.depreciation.formatRate(generated.tauxDecoteAnnuel) + '</strong><small>Appliqué aux dix taux de « ' +
-        escapeHtml(profile.key) + ' ».</small></div><div class="table-wrap"><table><caption class="visually-hidden">Profil de décote automatique généré</caption>' +
-        '<thead><tr><th scope="col">Année</th><th scope="col">Valeur estimée</th><th scope="col">Décote depuis le départ</th></tr></thead><tbody>' +
+      automaticDepreciationPreview.innerHTML = '<div class="automatic-rate-summary"><span>Taux annuel moyen équivalent</span><strong>' +
+        TCO.depreciation.formatRate(generated.tauxAnnuelMoyenEquivalent) + '</strong><small>' +
+        escapeHtml(generated.libelleProfilForme) + ' · coefficient ' + generated.coefficientForme +
+        '</small><small>Dix taux appliqués à « ' + escapeHtml(profile.key) + ' ».</small></div><div class="table-wrap"><table><caption class="visually-hidden">Profil de décote automatique généré</caption>' +
+        '<thead><tr><th scope="col">Année</th><th scope="col">Valeur estimée</th><th scope="col">Taux annuel réel</th><th scope="col">Décote depuis le départ</th></tr></thead><tbody>' +
         rows + '</tbody></table></div>';
       automaticDepreciationPreview.hidden = false;
     }
@@ -350,6 +355,10 @@
       automaticDepreciationPreview.hidden = true;
     });
 
+    automaticShapeProfile.addEventListener('change', function () {
+      automaticDepreciationPreview.hidden = true;
+    });
+
     automaticDepreciationForm.addEventListener('submit', function (event) {
       event.preventDefault();
       const profile = TCO.depreciation.getProfileByKey(state.depreciationProfiles, automaticProfileTarget.value);
@@ -361,14 +370,18 @@
         const generated = TCO.depreciation.calculerProfilDecote(
           automaticStartPrice.value,
           automaticEstimatedPrice.value,
-          automaticYears.value
+          automaticYears.value,
+          automaticShapeProfile.value,
+          10
         );
-        profile.rates = new Array(10).fill(generated.tauxDecoteAnnuel);
+        profile.rates = generated.profil.slice(1, 11).map(function (point) {
+          return point.tauxDecoteAnnuelReel;
+        });
         renderProfiles();
         automaticProfileTarget.value = profile.key;
         renderAutomaticDepreciationPreview(generated, profile);
         automaticDepreciationError.textContent = '';
-        showMessage('Profil automatique appliqué à « ' + profile.key + ' ».', 'success');
+        showMessage(generated.libelleProfilForme + ' appliqué à « ' + profile.key + ' ».', 'success');
         onChange();
       } catch (error) {
         const message = error.message || 'Impossible de générer ce profil.';

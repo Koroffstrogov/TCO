@@ -125,12 +125,20 @@
       <details id="automatic-depreciation" class="automatic-depreciation">
         <summary>Profil de décote automatique</summary>
         <div class="automatic-depreciation-content">
-          <p class="section-help">Calcule un taux composé constant qui relie exactement le prix de départ au prix estimé. Ce taux est appliqué aux dix âges du profil sélectionné et reste ensuite modifiable manuellement.</p>
+          <p class="section-help">Relie exactement le prix de départ au prix estimé selon la forme choisie, puis prolonge la même courbe jusqu’à l’année 10. Les dix taux générés restent ensuite modifiables manuellement.</p>
           <form id="automatic-depreciation-form" novalidate>
             <div class="automatic-depreciation-grid">
               <div class="field">
                 <label for="automatic-profile-target">Profil à modifier</label>
                 <select id="automatic-profile-target" aria-describedby="automatic-depreciation-error" required></select>
+              </div>
+              <div class="field">
+                <label for="automatic-shape-profile">Forme de la décote</label>
+                <select id="automatic-shape-profile" aria-describedby="automatic-depreciation-error">
+                  <option value="constant">Taux annuel constant</option>
+                  <option value="debutAccelere">Décote légèrement accélérée au début</option>
+                  <option value="initialeForte">Décote initiale forte</option>
+                </select>
               </div>
               <div class="field">
                 <label for="automatic-start-price">Prix de départ</label>

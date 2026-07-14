@@ -90,7 +90,7 @@ L’éditeur doit afficher une table avec :
 - année 1 à année 10 ;
 - actions : modifier, dupliquer, supprimer.
 
-Un assistant optionnel permet de générer les dix taux d’un profil à partir d’un prix de départ, d’un prix final estimé et d’une durée de 1 à 10 ans, selon une interpolation exponentielle composée. La trajectoire et le taux annuel moyen sont affichés avant de conserver les taux dans le profil sélectionné.
+Un assistant optionnel permet de générer les dix taux d’un profil à partir d’un prix de départ, d’un prix final estimé et d’une durée de 1 à 10 ans, selon une interpolation exponentielle composée. L’utilisateur choisit une forme à taux annuel constant (`c = 1`), légèrement accélérée au début (`c = 0,85`) ou à décote initiale forte (`c = 0,65`). La trajectoire est prolongée jusqu’à l’année 10 ; sa prévisualisation, ses taux annuels réels et son taux annuel moyen équivalent sont affichés avant de conserver les dix taux modifiables dans le profil sélectionné.
 
 L’utilisateur doit pouvoir sauvegarder plusieurs profils. La clé logique recommandée est :
 

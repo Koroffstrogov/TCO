@@ -56,7 +56,7 @@ Deux véhicules de même énergie peuvent donc utiliser des hypothèses entière
 
 Les dix taux du profil correspondent désormais aux dix premières années de vie du véhicule. L’âge à l’achat est calculé avec `année courante − année de mise en circulation`. Une occasion âgée de 5 ans applique donc le taux « âge 6 » pendant sa première année de possession. Le taux « âge 10 » est répété pour toutes les années suivantes. Si l’année d’une occasion est inconnue, l’application conserve temporairement un index par année de possession et affiche un avertissement.
 
-L’assistant de profil automatique calcule, sur une durée entière de 1 à 10 ans, un taux composé constant reliant exactement un prix de départ à un prix final estimé. La trajectoire est prévisualisée année par année, puis ce taux est appliqué aux dix âges du profil choisi. Le tableau manuel reste la source enregistrée : les dix taux générés peuvent être retouchés et sont sauvegardés comme les autres profils.
+L’assistant de profil automatique relie exactement un prix de départ à un prix final estimé sur une durée entière de 1 à 10 ans. Il propose trois trajectoires : **Taux annuel constant** (`c = 1`), **Décote légèrement accélérée au début** (`c = 0,85`) et **Décote initiale forte** (`c = 0,65`). Le taux annuel moyen équivalent affiché reste le même pour ces trois formes ; seuls les taux annuels réels changent. La courbe est prévisualisée et prolongée jusqu’à l’année 10, puis ses dix taux sont appliqués au profil choisi. Le tableau manuel reste la source enregistrée : les taux générés peuvent être retouchés et sont sauvegardés comme les autres profils.
 
 ```text
 âge N = âge à l’achat + N

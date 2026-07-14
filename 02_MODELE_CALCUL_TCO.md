@@ -112,14 +112,26 @@ Les taux doivent être manipulés en ratio interne :
 
 ### 3.1 Profil de décote automatique
 
-Pour un prix de départ `P0`, un prix estimé `PX` et une durée entière `X` comprise entre 1 et 10 ans :
+Pour un prix de départ `P0`, un prix estimé `PX`, une durée entière `X` comprise entre 1 et 10 ans et un coefficient de forme `c` :
 
 ```text
-tauxDecoteAnnuel = 1 - (PX / P0) ^ (1 / X)
-prixAnneeN = P0 × (PX / P0) ^ (N / X)
+tauxAnnuelMoyenEquivalent = 1 - (PX / P0) ^ (1 / X)
+prixAnneeN = P0 × (PX / P0) ^ ((N / X) ^ c)
 ```
 
-La prévisualisation contient les années `0` à `X`. Les extrémités reprennent exactement `P0` et `PX`, tandis que les valeurs intermédiaires sont arrondies à l’euro pour l’affichage. Le taux composé est appliqué aux dix taux du profil sélectionné, qui reste ensuite éditable et sauvegardé selon le format habituel.
+Trois formes sont proposées :
+
+- `c = 1` : taux annuel constant ;
+- `c = 0,85` : décote légèrement accélérée au début ;
+- `c = 0,65` : décote initiale forte.
+
+Le coefficient ne change pas les extrémités : l’année 0 reprend exactement `P0` et l’année `X` exactement `PX`. Le taux annuel moyen équivalent reste identique pour les trois formes, mais les taux réellement appliqués varient lorsque `c` diffère de 1 :
+
+```text
+tauxReelAnneeN = 1 - prixAnneeN / prixAnneeN-1
+```
+
+La courbe est calculée jusqu’à l’année 10, y compris au-delà de l’année cible, puis ses dix taux réels alimentent le profil sélectionné. Les valeurs de prévisualisation sont arrondies à l’euro pour l’affichage seulement ; les taux sont dérivés des valeurs non arrondies. Le profil reste ensuite éditable et sauvegardé selon le format habituel.
 
 Les deux prix doivent être strictement positifs, `PX` doit être inférieur ou égal à `P0`, et `X` doit être un entier de 1 à 10.
 
