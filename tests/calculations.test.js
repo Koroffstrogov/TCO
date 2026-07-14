@@ -16,7 +16,7 @@ const context = {
 };
 context.window.window = context.window;
 vm.createContext(context);
-['js/defaults.js', 'js/depreciation.js', 'js/storage.js', 'js/calculations.js'].forEach((file) => {
+['js/defaults.js', 'js/depreciation.js', 'js/storage.js', 'js/calculations.js', 'js/ui.js'].forEach((file) => {
   vm.runInContext(fs.readFileSync(path.join(root, file), 'utf8'), context, { filename: file });
 });
 const TCO = context.window.TCO;
@@ -34,6 +34,20 @@ function assertAnnualReconciliation(result, label) {
   assert.equal(last.tcoEconomique, result.tcoNetApresIk, `${label} : TCO économique final`);
   close(detail.totaux.totalCouts - detail.totaux.totalGains, result.tcoNetApresIk, `${label} : coûts moins gains`);
   assert.equal(detail.totaux.soldeNet, result.tcoNetApresIk, `${label} : solde total`);
+}
+function assertThreeAnnualReadings(result, label) {
+  const detail = result.decompositionAnnuelle;
+  const usageCosts = result.coutEnergieCumule + result.entretienCumule + result.pneusCumule + result.assuranceCumule;
+  const grossComposition = result.coutDecote + usageCosts + result.fraisAchat + result.taxes;
+  const cashReading = result.coutAcquisitionNet + usageCosts - result.ikRetenueCumulee - result.valeurResiduelle;
+  close(grossComposition, result.tcoBrut, `${label} : composition du TCO brut`);
+  close(result.tcoBrut - result.montantReprise, result.tcoNetApresIk + result.ikRetenueCumulee,
+    `${label} : coût net avant IK`);
+  close(cashReading, result.tcoNetApresIk, `${label} : trésorerie avec revente simulée`);
+  close(detail.annees[0].valeurVehiculeDeduite, result.assietteValeur, `${label} : valeur à l’achat`);
+  close(detail.annees[detail.annees.length - 1].valeurVehiculeDeduite, result.valeurResiduelle,
+    `${label} : valeur à l’horizon`);
+  detail.annees.forEach((point) => assert.ok(point.valeurVehiculeDeduite >= 0, `${label} : actif affiché positivement`));
 }
 
 assert.equal(state().version, 3);
@@ -67,6 +81,15 @@ assert.equal(Object.keys(state().settings).length, 9, 'neuf hypothèses communes
   close(result.tcoBrut, 1200, 'TCO brut avant reprise');
   close(result.tcoNetApresIk, -1800, 'TCO net après reprise');
   close(result.seriesAnnuelles[0].tcoNet, -1800, 'reprise appliquée dès la première année');
+  const presentation = TCO.ui.getAnnualResultPresentation(result.tcoNetApresIk);
+  assert.equal(presentation.label, 'Excédent théorique après IK');
+  assert.equal(presentation.amount, 1800, 'excédent présenté comme montant positif');
+  assert.equal(presentation.className, 'surplus');
+  const rendered = TCO.ui.renderAnnualScenario(result, true, false, 0);
+  const renderedHeader = rendered.slice(0, rendered.indexOf('</summary>'));
+  assert.match(renderedHeader, /Excédent théorique après IK/);
+  assert.doesNotMatch(renderedHeader, /−/);
+  assert.doesNotMatch(renderedHeader, /de TCO final/);
 }
 
 // Échéancier complet : acquisition, coûts annuels, gains et valeur résiduelle finale.
@@ -108,6 +131,32 @@ assert.equal(Object.keys(state().settings).length, 9, 'neuf hypothèses communes
   close(detail.totaux.totalGains, 21152, 'total des gains horizon');
   assert.equal(Object.prototype.hasOwnProperty.call(detail.totaux.gains, 'valeurVehiculeDeduite'), false, 'valeur déduite non cumulée dans les gains');
   assertAnnualReconciliation(result, 'échéancier complet');
+  assertThreeAnnualReadings(result, 'échéancier complet');
+
+  const rendered = TCO.ui.renderAnnualScenario(result, true, true, 0);
+  const expectedOrder = [
+    'Synthèse à 2 ans',
+    'Composition du TCO',
+    'Trésorerie annuelle',
+    'Valeur estimée du véhicule',
+    'Détail complet par poste'
+  ];
+  expectedOrder.reduce((previousPosition, label) => {
+    const position = rendered.indexOf(label);
+    assert.ok(position > previousPosition, `ordre du bloc ${label}`);
+    return position;
+  }, -1);
+  ['TCO brut du véhicule', 'Reprise déduite', 'Coût net avant IK', 'IK cumulées', 'Coût net après IK',
+    'Décote', 'Dépense nette cumulée', 'Déductions et recettes', 'Revente simulée', 'Cumul sur 2 ans'].forEach((label) => {
+    assert.match(rendered, new RegExp(label), `libellé annuel ${label}`);
+  });
+  ['Cumul de trésorerie', 'Valeur du véhicule déduite', 'Total horizon', '>Gains<', 'de TCO final'].forEach((obsoleteLabel) => {
+    assert.equal(rendered.includes(obsoleteLabel), false, `ancien libellé retiré : ${obsoleteLabel}`);
+  });
+  assert.match(rendered, /class="annual-horizon-metric cost"/);
+  assert.match(rendered, /class="annual-horizon-metric saving"/);
+  assert.match(rendered, /aria-labelledby="annual-scenario-0-summary-title"/);
+  assert.match(rendered, /caption class="visually-hidden"/);
 }
 
 // Les aides/remises sont plafonnées au prix, tandis qu’une reprise élevée reste un gain distinct.
@@ -138,6 +187,7 @@ assert.equal(Object.keys(state().settings).length, 9, 'neuf hypothèses communes
   close(result.decompositionAnnuelle.annees[0].gains.valeurResiduelle, 0, 'aucune valeur résiduelle en année 0');
   close(result.decompositionAnnuelle.annees[1].gains.valeurResiduelle, 8800, 'valeur résiduelle en année 1');
   assertAnnualReconciliation(result, 'horizon un an');
+  assertThreeAnnualReadings(result, 'horizon un an');
 }
 
 // Horizon 10 : les postes annuels sont répétés dix fois et la revente reste unique.
@@ -153,6 +203,7 @@ assert.equal(Object.keys(state().settings).length, 9, 'neuf hypothèses communes
   close(detail.totaux.gains.ik, 500, 'IK répétées dix ans');
   close(detail.totaux.gains.valeurResiduelle, result.valeurResiduelle, 'une seule valeur résiduelle');
   assertAnnualReconciliation(result, 'horizon dix ans');
+  assertThreeAnnualReadings(result, 'horizon dix ans');
 }
 
 // Les montants nuls produisent un échéancier neutre mais complet.

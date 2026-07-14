@@ -36,6 +36,21 @@
     'kilometrageAnnuelOverride'
   ]);
   const SCENARIO_NULLABLE_FIELDS = new Set(['anneeMiseEnCirculation', 'kilometrageAnnuelOverride']);
+  const ANNUAL_DETAIL_COST_ROWS = [
+    ['achatVehicule', 'Prix du véhicule'],
+    ['fraisAchat', "Frais d’achat"],
+    ['taxes', "Taxe d’immatriculation"],
+    ['energie', 'Énergie'],
+    ['entretien', 'Entretien'],
+    ['pneus', 'Pneus'],
+    ['assurance', 'Assurance']
+  ];
+  const ANNUAL_DETAIL_DEDUCTION_ROWS = [
+    ['aidesRemises', 'Aides et remises appliquées'],
+    ['reprise', 'Reprise du véhicule'],
+    ['ik', 'IK encaissées'],
+    ['valeurResiduelle', 'Revente simulée']
+  ];
 
   function escapeHtml(value) {
     return String(value === undefined || value === null ? '' : value)
@@ -56,6 +71,196 @@
 
   function formatNumber(value, digits) {
     return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: digits === undefined ? 2 : digits }).format(Number(value) || 0);
+  }
+
+  function isZeroAmount(value) {
+    return Math.abs(Number(value) || 0) < 1e-9;
+  }
+
+  function annualAmount(value, tone) {
+    const amount = Number(value) || 0;
+    if (isZeroAmount(amount)) return '<span class="neutral annual-zero">—</span>';
+    return '<span class="' + (tone || 'neutral') + '">' + formatCurrency(Math.abs(amount)) + '</span>';
+  }
+
+  function annualSignedAmount(value) {
+    const amount = Number(value) || 0;
+    if (isZeroAmount(amount)) return '<span class="neutral annual-zero">—</span>';
+    const isSurplus = amount < 0;
+    return '<span class="' + (isSurplus ? 'surplus' : 'cost') + '"><span class="visually-hidden">' +
+      (isSurplus ? 'Excédent ' : 'Dépense ') + '</span>' + (isSurplus ? '− ' : '') +
+      formatCurrency(Math.abs(amount)) + '</span>';
+  }
+
+  function getAnnualResultPresentation(value) {
+    const amount = Number(value) || 0;
+    const isSurplus = amount < 0;
+    return {
+      label: isSurplus ? 'Excédent théorique après IK' : 'Coût net après IK',
+      amount: Math.abs(amount),
+      className: isSurplus ? 'surplus' : 'cost'
+    };
+  }
+
+  function renderAnnualMetric(label, value, tone, detail) {
+    return '<div class="annual-horizon-metric ' + tone + '"><dt>' + escapeHtml(label) + '</dt><dd>' +
+      formatCurrency(Math.abs(Number(value) || 0)) + '</dd><dd class="annual-metric-detail">' + escapeHtml(detail) + '</dd></div>';
+  }
+
+  function renderAnnualHorizonSummary(result, sectionId) {
+    const horizon = result.decompositionAnnuelle.annees.length - 1;
+    const netBeforeIk = result.tcoBrut - result.montantReprise;
+    const finalResult = getAnnualResultPresentation(result.tcoNetApresIk);
+    const netBeforeTone = netBeforeIk < 0 ? 'surplus' : 'cost';
+    const netBeforeDetail = netBeforeIk < 0 ? 'Excédent théorique avant IK' : 'Après déduction de la reprise';
+    return '<section class="annual-reading annual-horizon-summary" aria-labelledby="' + sectionId + '-summary-title">' +
+      '<div class="annual-reading-heading"><h3 id="' + sectionId + '-summary-title">Synthèse à ' + horizon + ' an' +
+      (horizon > 1 ? 's' : '') + '</h3><p>Lecture économique à l’horizon sélectionné</p></div>' +
+      '<dl class="annual-horizon-grid">' +
+      renderAnnualMetric('TCO brut du véhicule', result.tcoBrut, 'cost', 'Avant reprise et IK') +
+      renderAnnualMetric('Reprise déduite', result.montantReprise, 'saving', 'Déduite une seule fois') +
+      renderAnnualMetric('Coût net avant IK', netBeforeIk, netBeforeTone, netBeforeDetail) +
+      renderAnnualMetric('IK cumulées', result.ikRetenueCumulee, 'saving', 'Encaissées sur ' + horizon + ' an' + (horizon > 1 ? 's' : '')) +
+      renderAnnualMetric(finalResult.label, finalResult.amount, finalResult.className, 'Résultat économique final') +
+      '</dl></section>';
+  }
+
+  function renderCompositionItem(label, value, tone, nature) {
+    return '<div class="composition-item ' + tone + '"><dt>' + escapeHtml(label) + '<span>' + escapeHtml(nature) +
+      '</span></dt><dd>' + formatCurrency(Math.abs(Number(value) || 0)) + '</dd></div>';
+  }
+
+  function renderTcoComposition(result, sectionId) {
+    const finalResult = getAnnualResultPresentation(result.tcoNetApresIk);
+    const compositionItems = [
+      renderCompositionItem('Décote', result.coutDecote, 'cost', 'Coût économique'),
+      renderCompositionItem('Énergie', result.coutEnergieCumule, 'cost', 'Coût économique'),
+      renderCompositionItem('Entretien', result.entretienCumule, 'cost', 'Coût économique'),
+      renderCompositionItem('Pneus', result.pneusCumule, 'cost', 'Coût économique'),
+      renderCompositionItem('Assurance', result.assuranceCumule, 'cost', 'Coût économique'),
+      renderCompositionItem('Frais d’achat et immatriculation', result.fraisAchat + result.taxes, 'cost', 'Coût économique'),
+      renderCompositionItem('Reprise', result.montantReprise, 'saving', 'Déduction'),
+      renderCompositionItem('IK', result.ikRetenueCumulee, 'saving', 'Déduction'),
+      renderCompositionItem(finalResult.label, finalResult.amount, finalResult.className, 'Résultat')
+    ].join('');
+    return '<section class="annual-reading annual-composition" aria-labelledby="' + sectionId + '-composition-title">' +
+      '<div class="annual-reading-heading"><h3 id="' + sectionId + '-composition-title">Composition du TCO</h3>' +
+      '<p>Coûts économiques et déductions sur l’horizon</p></div><dl class="composition-list">' + compositionItems + '</dl>' +
+      '<p class="composition-formula neutral" aria-label="' + escapeHtml('TCO brut moins reprise moins IK égale ' + finalResult.label + ' ' +
+      formatCurrency(finalResult.amount)) + '"><span>' + formatCurrency(result.tcoBrut) + ' de TCO brut</span>' +
+      '<span aria-hidden="true"> − </span><span>' + formatCurrency(result.montantReprise) + ' de reprise</span>' +
+      '<span aria-hidden="true"> − </span><span>' + formatCurrency(result.ikRetenueCumulee) + ' d’IK</span>' +
+      '<span aria-hidden="true"> = </span><strong class="' + finalResult.className + '">' + escapeHtml(finalResult.label) +
+      ' : ' + formatCurrency(finalResult.amount) + '</strong></p>' +
+      '<p class="annual-reading-note">La valeur résiduelle est déjà intégrée dans la décote. Elle n’est pas déduite une seconde fois dans cette composition.</p></section>';
+  }
+
+  function renderCashFlowRow(label, help, values, total, tone, signed) {
+    const cells = values.map(function (value) {
+      return '<td>' + (signed ? annualSignedAmount(value) : annualAmount(value, tone)) + '</td>';
+    }).join('');
+    return '<tr class="cashflow-row ' + tone + '"><th scope="row">' + escapeHtml(label) +
+      (help ? '<span class="profile-meta">' + escapeHtml(help) + '</span>' : '') + '</th>' + cells +
+      '<td class="annual-horizon-total">' + (signed ? annualSignedAmount(total) : annualAmount(total, tone)) + '</td></tr>';
+  }
+
+  function renderAnnualCashFlow(result, sectionId) {
+    const breakdown = result.decompositionAnnuelle;
+    const years = breakdown.annees;
+    const horizon = years.length - 1;
+    const headerYears = years.map(function (point) {
+      return '<th scope="col">Année ' + point.annee + '</th>';
+    }).join('');
+    const acquisition = years.map(function (point) { return point.annee === 0 ? point.soldeNet : 0; });
+    const usage = years.map(function (point) {
+      return point.couts.energie + point.couts.entretien + point.couts.pneus + point.couts.assurance;
+    });
+    const ik = years.map(function (point) { return point.gains.ik; });
+    const resale = years.map(function (point) { return point.gains.valeurResiduelle; });
+    const annualNet = years.map(function (point) { return point.soldeNet; });
+    const cumulative = years.map(function (point) { return point.cumulTresorerie; });
+    const usageTotal = usage.reduce(function (total, value) { return total + value; }, 0);
+    const totalColumns = years.length + 2;
+    return '<section class="annual-reading annual-cashflow" aria-labelledby="' + sectionId + '-cashflow-title">' +
+      '<div class="annual-reading-heading"><h3 id="' + sectionId + '-cashflow-title">Trésorerie annuelle</h3>' +
+      '<p>Décaissements, encaissements et dépense cumulée</p></div>' +
+      '<div class="table-wrap annual-table-wrap"><table class="annual-table cashflow-table"><caption class="visually-hidden">Trésorerie annuelle du scénario ' +
+      escapeHtml(result.name) + '</caption><thead><tr><th scope="col">Flux</th>' + headerYears +
+      '<th scope="col">Cumul sur ' + horizon + ' an' + (horizon > 1 ? 's' : '') + '</th></tr></thead><tbody>' +
+      '<tr class="annual-group-row"><th scope="rowgroup" colspan="' + totalColumns + '">Décaissements</th></tr>' +
+      renderCashFlowRow('Acquisition nette', 'Prix après aides/remises, frais, taxe et reprise', acquisition, result.coutAcquisitionNet, 'neutral', true) +
+      renderCashFlowRow('Coûts d’utilisation', 'Énergie, entretien, pneus et assurance', usage, usageTotal, 'cost', false) +
+      '<tr class="annual-group-row"><th scope="rowgroup" colspan="' + totalColumns + '">Déductions et recettes</th></tr>' +
+      renderCashFlowRow('IK encaissées', 'Recette annuelle retenue dans le scénario', ik, result.ikRetenueCumulee, 'saving', false) +
+      renderCashFlowRow('Revente simulée', 'Recette théorique uniquement à l’horizon final', resale, result.valeurResiduelle, 'saving', false) +
+      '<tr class="annual-group-row"><th scope="rowgroup" colspan="' + totalColumns + '">Solde de trésorerie</th></tr>' +
+      renderCashFlowRow('Flux net de l’année', 'Décaissements moins encaissements', annualNet, result.tcoNetApresIk, 'neutral', true) +
+      renderCashFlowRow('Dépense nette cumulée', 'Après revente simulée dans la dernière colonne', cumulative, result.tcoNetApresIk, 'neutral cashflow-total', true) +
+      '</tbody></table></div><p class="annual-reading-note">Acquisition nette + coûts d’utilisation − IK encaissées − revente simulée = résultat économique final.</p></section>';
+  }
+
+  function renderVehicleValue(result, sectionId) {
+    const years = result.decompositionAnnuelle.annees;
+    const horizon = years.length - 1;
+    const headers = years.map(function (point) {
+      if (point.annee === 0) return '<th scope="col">À l’achat</th>';
+      return '<th scope="col">Année ' + point.annee + (point.annee === horizon ? ' · horizon' : '') + '</th>';
+    }).join('');
+    const values = years.map(function (point) {
+      return '<td>' + annualAmount(point.valeurVehiculeDeduite, 'neutral') + '</td>';
+    }).join('');
+    return '<section class="annual-reading annual-vehicle-value" aria-labelledby="' + sectionId + '-value-title">' +
+      '<div class="annual-reading-heading"><h3 id="' + sectionId + '-value-title">Valeur estimée du véhicule</h3>' +
+      '<p>Valeur de l’actif, non encaissée avant une revente</p></div>' +
+      '<div class="table-wrap annual-table-wrap"><table class="annual-table asset-value-table"><caption class="visually-hidden">Valeur estimée du véhicule ' +
+      escapeHtml(result.name) + '</caption><thead><tr><th scope="col">Repère</th>' + headers + '</tr></thead><tbody><tr>' +
+      '<th scope="row">Valeur estimée</th>' + values + '</tr></tbody></table></div>' +
+      '<p class="annual-reading-note">La valeur à l’achat correspond à l’assiette du véhicule après aides et remises. Ces montants sont affichés positivement car ils représentent un actif estimé.</p></section>';
+  }
+
+  function renderFullAnnualDetail(result, sectionId, isOpen) {
+    const breakdown = result.decompositionAnnuelle;
+    const years = breakdown.annees;
+    const horizon = years.length - 1;
+    const totalColumns = years.length + 2;
+    const headerYears = years.map(function (point) { return '<th scope="col">Année ' + point.annee + '</th>'; }).join('');
+    const costLines = ANNUAL_DETAIL_COST_ROWS.map(function (row) {
+      const cells = years.map(function (point) { return '<td>' + annualAmount(point.couts[row[0]], 'cost') + '</td>'; }).join('');
+      return '<tr class="annual-cost-row cost"><th scope="row">' + row[1] + '</th>' + cells +
+        '<td class="annual-horizon-total">' + annualAmount(breakdown.totaux.couts[row[0]], 'cost') + '</td></tr>';
+    }).join('');
+    const deductionLines = ANNUAL_DETAIL_DEDUCTION_ROWS.map(function (row) {
+      const cells = years.map(function (point) { return '<td>' + annualAmount(point.gains[row[0]], 'saving') + '</td>'; }).join('');
+      return '<tr class="annual-deduction-row saving"><th scope="row">' + row[1] + '</th>' + cells +
+        '<td class="annual-horizon-total">' + annualAmount(breakdown.totaux.gains[row[0]], 'saving') + '</td></tr>';
+    }).join('');
+    return '<details class="annual-full-detail" data-annual-full-detail-id="' + escapeHtml(String(result.scenarioId)) + '"' +
+      (isOpen ? ' open' : '') + '><summary><span>Détail complet par poste</span><span class="profile-meta">Prix, frais, aides, usages et recettes</span></summary>' +
+      '<div class="table-wrap annual-table-wrap"><table class="annual-table"><caption class="visually-hidden">Détail complet par poste du scénario ' +
+      escapeHtml(result.name) + '</caption><thead><tr><th scope="col">Poste</th>' + headerYears + '<th scope="col">Cumul sur ' + horizon +
+      ' an' + (horizon > 1 ? 's' : '') + '</th></tr></thead>' +
+      '<tbody class="annual-costs"><tr class="annual-group-row"><th scope="rowgroup" colspan="' + totalColumns + '">Coûts</th></tr>' + costLines +
+      '<tr class="annual-subtotal-row cost"><th scope="row">Total des coûts</th>' + years.map(function (point) {
+        return '<td>' + annualAmount(point.totalCouts, 'cost') + '</td>';
+      }).join('') + '<td class="annual-horizon-total">' + annualAmount(breakdown.totaux.totalCouts, 'cost') + '</td></tr></tbody>' +
+      '<tbody class="annual-deductions"><tr class="annual-group-row"><th scope="rowgroup" colspan="' + totalColumns + '">Déductions et recettes</th></tr>' + deductionLines +
+      '<tr class="annual-subtotal-row saving"><th scope="row">Total des déductions et recettes</th>' + years.map(function (point) {
+        return '<td>' + annualAmount(point.totalGains, 'saving') + '</td>';
+      }).join('') + '<td class="annual-horizon-total">' + annualAmount(breakdown.totaux.totalGains, 'saving') + '</td></tr></tbody></table></div></details>';
+  }
+
+  function renderAnnualScenario(result, isOpen, isFullDetailOpen, index) {
+    const scenarioId = String(result.scenarioId);
+    const sectionId = 'annual-scenario-' + index;
+    const excluded = result.includeInCharts ? '' : '<span class="annual-excluded">Exclu des graphiques</span>';
+    const finalResult = getAnnualResultPresentation(result.tcoNetApresIk);
+    return '<details class="annual-scenario-detail" data-annual-scenario-id="' + escapeHtml(scenarioId) + '"' +
+      (isOpen ? ' open' : '') + '><summary><span class="annual-summary-content"><span class="annual-summary-name">' +
+      escapeHtml(result.name) + '</span>' + excluded + '<strong class="' + finalResult.className + '"><span>' +
+      escapeHtml(finalResult.label) + ' :</span> ' + formatCurrency(finalResult.amount) + '</strong></span></summary>' +
+      '<div class="annual-scenario-body">' + renderAnnualHorizonSummary(result, sectionId) +
+      renderTcoComposition(result, sectionId) + renderAnnualCashFlow(result, sectionId) +
+      renderVehicleValue(result, sectionId) + renderFullAnnualDetail(result, sectionId, isFullDetailOpen) + '</div></details>';
   }
 
   function initialInputValue(value, type) {
@@ -538,94 +743,28 @@
       document.getElementById('results-table').innerHTML = '<table><thead><tr><th scope="col">Scénario</th><th scope="col">TCO net</th><th scope="col">TCO brut</th><th scope="col">Acquisition nette</th><th scope="col">Âge achat</th><th scope="col">Âge horizon</th><th scope="col">Taux de profil à l’horizon</th><th scope="col">Km achat</th><th scope="col">Km horizon</th><th scope="col">Valeur résiduelle</th><th scope="col">Décote</th><th scope="col">Énergie</th><th scope="col">Entretien</th><th scope="col">Pneus</th><th scope="col">Assurance</th><th scope="col">Frais + taxes</th><th scope="col">Reprise</th><th scope="col">IK retenues</th><th scope="col">Moyenne/an</th><th scope="col">Coût/km</th></tr></thead><tbody>' + rows + '</tbody></table>';
     }
 
-    function annualAmount(value, type) {
-      const amount = Number(value) || 0;
-      if (Math.abs(amount) < 1e-9) return '<span class="annual-zero">—</span>';
-      if (type === 'gain') return '<span class="annual-gain-value">− ' + formatCurrency(Math.abs(amount)) + '</span>';
-      return formatCurrency(amount);
-    }
-
-    function annualResultAmount(value) {
-      const amount = Number(value) || 0;
-      if (Math.abs(amount) < 1e-9) return '<span class="annual-zero">—</span>';
-      const classification = amount < 0 ? 'negative' : 'positive';
-      return '<span class="' + classification + '">' + formatCurrency(amount) + '</span>';
-    }
-
     function renderAnnualBreakdowns(results) {
       const openIds = new Set();
+      const openFullDetailIds = new Set();
       if (annualBreakdownsRendered) {
         annualBreakdowns.querySelectorAll('details[open][data-annual-scenario-id]').forEach(function (detail) {
           openIds.add(detail.dataset.annualScenarioId);
+        });
+        annualBreakdowns.querySelectorAll('details[open][data-annual-full-detail-id]').forEach(function (detail) {
+          openFullDetailIds.add(detail.dataset.annualFullDetailId);
         });
       } else if (results.length) {
         openIds.add(String(results[0].scenarioId));
       }
 
-      const costRows = [
-        ['achatVehicule', 'Prix du véhicule'],
-        ['fraisAchat', "Frais d’achat"],
-        ['taxes', "Taxe d’immatriculation"],
-        ['energie', 'Énergie'],
-        ['entretien', 'Entretien'],
-        ['pneus', 'Pneus'],
-        ['assurance', 'Assurance']
-      ];
-      const gainRows = [
-        ['aidesRemises', 'Aides et remises appliquées'],
-        ['reprise', 'Reprise du véhicule'],
-        ['ik', 'IK retenues'],
-        ['valeurResiduelle', 'Valeur résiduelle projetée']
-      ];
-
-      annualBreakdowns.innerHTML = results.map(function (result) {
-        const breakdown = result.decompositionAnnuelle;
-        const years = breakdown.annees;
-        const totalColumns = years.length + 2;
-        const headerYears = years.map(function (point) {
-          return '<th scope="col">Année ' + point.annee + '</th>';
-        }).join('');
-        const costLines = costRows.map(function (row) {
-          const cells = years.map(function (point) { return '<td>' + annualAmount(point.couts[row[0]], 'cost') + '</td>'; }).join('');
-          return '<tr class="annual-cost-row"><th scope="row">' + row[1] + '</th>' + cells +
-            '<td class="annual-horizon-total">' + annualAmount(breakdown.totaux.couts[row[0]], 'cost') + '</td></tr>';
-        }).join('');
-        const gainLines = gainRows.map(function (row) {
-          const cells = years.map(function (point) { return '<td>' + annualAmount(point.gains[row[0]], 'gain') + '</td>'; }).join('');
-          return '<tr class="annual-gain-row"><th scope="row">' + row[1] + '</th>' + cells +
-            '<td class="annual-horizon-total">' + annualAmount(breakdown.totaux.gains[row[0]], 'gain') + '</td></tr>';
-        }).join('');
-        const totalCostCells = years.map(function (point) { return '<td>' + annualAmount(point.totalCouts, 'cost') + '</td>'; }).join('');
-        const totalGainCells = years.map(function (point) { return '<td>' + annualAmount(point.totalGains, 'gain') + '</td>'; }).join('');
-        const annualNetCells = years.map(function (point) { return '<td>' + annualResultAmount(point.soldeNet) + '</td>'; }).join('');
-        const cashCells = years.map(function (point) { return '<td>' + annualResultAmount(point.cumulTresorerie) + '</td>'; }).join('');
-        const vehicleValueCells = years.map(function (point) { return '<td>' + annualAmount(point.valeurVehiculeDeduite, 'gain') + '</td>'; }).join('');
-        const economicCells = years.map(function (point) { return '<td>' + annualResultAmount(point.tcoEconomique) + '</td>'; }).join('');
-        const finalEconomicTco = years[years.length - 1].tcoEconomique;
-        const finalVehicleValue = years[years.length - 1].valeurVehiculeDeduite;
+      annualBreakdowns.innerHTML = results.map(function (result, index) {
         const scenarioId = String(result.scenarioId);
-        const excluded = result.includeInCharts ? '' : '<span class="annual-excluded">Exclu des graphiques</span>';
-
-        return '<details class="annual-scenario-detail" data-annual-scenario-id="' + escapeHtml(scenarioId) + '"' +
-          (openIds.has(scenarioId) ? ' open' : '') + '><summary><span class="annual-summary-content"><span class="annual-summary-name">' +
-          escapeHtml(result.name) + '</span>' + excluded + '<strong>' + formatCurrency(result.tcoNetApresIk) + ' de TCO final</strong></span></summary>' +
-          '<div class="table-wrap annual-table-wrap"><table class="annual-table"><caption class="visually-hidden">Détail annuel des coûts et gains du scénario ' +
-          escapeHtml(result.name) + '</caption><thead><tr><th scope="col">Poste</th>' + headerYears + '<th scope="col">Total horizon</th></tr></thead>' +
-          '<tbody class="annual-costs"><tr class="annual-group-row"><th scope="rowgroup" colspan="' + totalColumns + '">Coûts</th></tr>' + costLines +
-          '<tr class="annual-subtotal-row"><th scope="row">Total des coûts</th>' + totalCostCells + '<td class="annual-horizon-total">' +
-          annualAmount(breakdown.totaux.totalCouts, 'cost') + '</td></tr></tbody>' +
-          '<tbody class="annual-gains"><tr class="annual-group-row"><th scope="rowgroup" colspan="' + totalColumns + '">Gains</th></tr>' + gainLines +
-          '<tr class="annual-subtotal-row"><th scope="row">Total des gains</th>' + totalGainCells + '<td class="annual-horizon-total">' +
-          annualAmount(breakdown.totaux.totalGains, 'gain') + '</td></tr></tbody>' +
-          '<tbody class="annual-results"><tr class="annual-group-row"><th scope="rowgroup" colspan="' + totalColumns + '">Résultat</th></tr>' +
-          '<tr><th scope="row">Solde net de l’année<span class="profile-meta">Acquisition nette en année 0</span></th>' + annualNetCells +
-          '<td class="annual-horizon-total">' + annualResultAmount(breakdown.totaux.soldeNet) + '</td></tr>' +
-          '<tr><th scope="row">Cumul de trésorerie</th>' + cashCells + '<td class="annual-horizon-total">' +
-          annualResultAmount(breakdown.totaux.soldeNet) + '</td></tr>' +
-          '<tr class="annual-non-cumulative-row"><th scope="row">Valeur du véhicule déduite<span class="profile-meta">Instantané non cumulable</span></th>' +
-          vehicleValueCells + '<td class="annual-horizon-total">' + annualAmount(finalVehicleValue, 'gain') + '</td></tr>' +
-          '<tr class="annual-final-row"><th scope="row">TCO économique estimé<span class="profile-meta">Cumul économique après déduction de la valeur du véhicule</span></th>' +
-          economicCells + '<td class="annual-horizon-total">' + annualResultAmount(finalEconomicTco) + '</td></tr></tbody></table></div></details>';
+        return renderAnnualScenario(
+          result,
+          openIds.has(scenarioId),
+          openFullDetailIds.has(scenarioId),
+          index
+        );
       }).join('');
       annualBreakdownsRendered = true;
     }
@@ -661,6 +800,8 @@
   TCO.ui = {
     initUi: initUi,
     formatCurrency: formatCurrency,
-    formatNumber: formatNumber
+    formatNumber: formatNumber,
+    getAnnualResultPresentation: getAnnualResultPresentation,
+    renderAnnualScenario: renderAnnualScenario
   };
 }(window.TCO = window.TCO || {}));

@@ -69,9 +69,13 @@ Le kilométrage présent à l’achat ne pénalise pas une seconde fois la valeu
 
 Le montant de reprise est traité comme un apport propre au scénario. Il est déduit du coût d’acquisition et du TCO dès l’année 0, mais ne réduit pas l’assiette de décote du véhicule acheté ni sa valeur résiduelle projetée.
 
-Le panneau **Détail annuel par scénario** présente un échéancier de l’année 0 jusqu’à l’horizon choisi. L’année 0 regroupe le prix, les frais et la taxe, puis déduit les aides, remises et la reprise. Les années suivantes affichent séparément énergie, entretien, pneus, assurance et IK. La valeur résiduelle n’est comptée comme gain de trésorerie qu’à la dernière année, en supposant une revente.
+Le panneau **Détail annuel par scénario** sépare désormais trois lectures complémentaires :
 
-La ligne **Cumul de trésorerie** additionne réellement les flux affichés. La ligne **Valeur du véhicule déduite — non cumulable** montre l’assiette en année 0 puis la valeur résiduelle estimée à chaque fin d’année ; sa colonne « Total horizon » reprend uniquement la dernière valeur, sans les additionner. La ligne **TCO économique estimé** applique cette déduction. Les deux lectures rejoignent exactement le TCO net à l’horizon final.
+- la **composition économique du TCO** additionne la décote, les usages, les frais et la taxe, puis déduit une seule fois la reprise et les IK ; la valeur résiduelle n’y apparaît pas séparément puisqu’elle est déjà intégrée dans la décote ;
+- la **trésorerie annuelle** présente l’acquisition nette en année 0, les coûts d’utilisation, les IK encaissées et une revente simulée uniquement dans la dernière année ; la dépense nette cumulée se réconcilie exactement avec le résultat économique final à l’horizon ;
+- la **valeur estimée du véhicule** montre positivement l’assiette à l’achat puis la valeur de l’actif à chaque fin d’année, sans la traiter comme une recette avant la revente simulée.
+
+Chaque scénario affiche d’abord une synthèse à l’horizon et la composition du TCO, puis la trésorerie, la valeur du véhicule et enfin un détail complet par poste repliable. Un résultat négatif est libellé **Excédent théorique après IK** et présenté en valeur absolue afin d’éviter de confondre un gain théorique avec un « TCO négatif ».
 
 Le TCO brut additionne :
 
