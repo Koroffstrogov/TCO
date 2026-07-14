@@ -105,6 +105,7 @@
           fraisAchat: scenarioNumber('fraisAchat', legacyFees),
           aideAchat: scenarioNumber('aideAchat', isElectric && isNew ? oldNumber('aideVeNeuveEligible') : 0),
           remiseComplementaire: scenarioNumber('remiseComplementaire', isElectric && isNew ? oldNumber('surbonusRemiseComplementaire') : 0),
+          montantReprise: scenarioNumber('montantReprise', 0),
           entretienAnnuel: scenarioNumber('entretienAnnuel', legacyMaintenance),
           pneusAnnuel: scenarioNumber('pneusAnnuel', legacyTyres),
           assuranceAnnuelle: scenarioNumber('assuranceAnnuelle', legacyInsurance),

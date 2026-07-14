@@ -11,14 +11,14 @@ Les navigateurs peuvent restreindre `localStorage` en navigation privée. L’ap
 ## Utilisation
 
 1. Renseignez les **hypothèses communes** : horizon, kilométrages, prix d’énergie et paramètres indicatifs d’IK.
-2. Décrivez chaque véhicule dans sa carte scénario : prix d’achat, année de mise en circulation, kilométrage à l’achat, frais, taxe, aides, consommation et coûts annuels.
+2. Décrivez chaque véhicule dans sa carte scénario : prix d’achat, année de mise en circulation, kilométrage à l’achat, frais, taxe, aides, montant de reprise, consommation et coûts annuels.
 3. Sélectionnez un profil et un niveau de décote pour chaque scénario.
-4. Modifiez au besoin les dix taux du profil, indexés sur l’âge du véhicule.
-5. Consultez la synthèse, le détail des composantes, le TCO cumulé et la courbe de valeur résiduelle de chaque véhicule, actualisés à chaque saisie.
+4. Modifiez au besoin les dix taux du profil, indexés sur l’âge du véhicule, ou utilisez l’assistant **Profil de décote automatique**.
+5. Consultez la synthèse, le détail annuel par scénario, les graphiques de TCO et la courbe de valeur résiduelle, actualisés à chaque saisie.
 
 Les nombres acceptent la virgule ou le point décimal. Les pourcentages acceptent notamment `12`, `12%`, `12,5%` et `0.125` ; ils sont stockés sous forme de ratio (`0.12` pour 12 %). Un champ vide vaut temporairement zéro. Les saisies négatives ou hors limites sont signalées sans bloquer le reste de l’interface.
 
-L’interface qualifie les champs avec six repères : **↑ TCO** pour les coûts qui l’augmentent, **↓ TCO** pour les aides, remises et IK qui le réduisent, **Calcul** pour les informations utilisées sans effet toujours directionnel, **Indicatif** pour les simples repères qui ne sont jamais injectés automatiquement dans le TCO, **Projection** pour une information de suivi sans pénalité initiale, et **Hors TCO** pour la description ou l’affichage.
+L’interface qualifie les champs avec six repères : **↑ TCO** pour les coûts qui l’augmentent, **↓ TCO** pour les aides, remises, reprises et IK qui le réduisent, **Calcul** pour les informations utilisées sans effet toujours directionnel, **Indicatif** pour les simples repères qui ne sont jamais injectés automatiquement dans le TCO, **Projection** pour une information de suivi sans pénalité initiale, et **Hors TCO** pour la description ou l’affichage.
 
 ## Sauvegarde, export et import
 
@@ -30,7 +30,7 @@ Chaque modification est sauvegardée automatiquement dans trois clés versionné
 
 Le bouton **Sauvegarder** force une sauvegarde et confirme son résultat. **Exporter JSON** télécharge un état V3 complet et normalisé. **Importer JSON** attend un objet contenant `settings`, `scenarios` et `depreciationProfiles`, puis valide et recharge l’état. Les exports V1 et V2 restent acceptés. Les anciennes clés sont relues puis migrées automatiquement lorsqu’aucune sauvegarde V3 n’existe.
 
-Lors d’une migration V2, un véhicule neuf sans année reçoit l’année courante. Une occasion sans année conserve `null` et affiche un avertissement. Le kilométrage d’achat absent devient `0`. Les anciens réglages avancés éventuellement présents dans un profil sont retirés lors de la normalisation.
+Lors d’une migration V2, un véhicule neuf sans année reçoit l’année courante. Une occasion sans année conserve `null` et affiche un avertissement. Le kilométrage d’achat et le montant de reprise absents deviennent `0`. Les anciens réglages avancés éventuellement présents dans un profil sont retirés lors de la normalisation.
 
 **Réinitialiser** restaure l’ensemble de la configuration initiale. Le bouton de restauration dans l’éditeur ne réinitialise que les 12 profils de décote fournis par la spécification.
 
@@ -41,7 +41,7 @@ Les hypothèses communes sont limitées à neuf valeurs partagées : horizon KPI
 Chaque scénario est la source de vérité pour son véhicule :
 
 - prix d’achat net, frais d’achat et taxe d’immatriculation ;
-- aide à l’achat et remise complémentaire ;
+- aide à l’achat, remise complémentaire et montant de reprise du véhicule ;
 - consommation adaptée à l’énergie ;
 - entretien, pneus et assurance annuels ;
 - IK annuelle effectivement retenue dans le TCO ;
@@ -56,6 +56,8 @@ Deux véhicules de même énergie peuvent donc utiliser des hypothèses entière
 
 Les dix taux du profil correspondent désormais aux dix premières années de vie du véhicule. L’âge à l’achat est calculé avec `année courante − année de mise en circulation`. Une occasion âgée de 5 ans applique donc le taux « âge 6 » pendant sa première année de possession. Le taux « âge 10 » est répété pour toutes les années suivantes. Si l’année d’une occasion est inconnue, l’application conserve temporairement un index par année de possession et affiche un avertissement.
 
+L’assistant de profil automatique calcule, sur une durée entière de 1 à 10 ans, un taux composé constant reliant exactement un prix de départ à un prix final estimé. La trajectoire est prévisualisée année par année, puis ce taux est appliqué aux dix âges du profil choisi. Le tableau manuel reste la source enregistrée : les dix taux générés peuvent être retouchés et sont sauvegardés comme les autres profils.
+
 ```text
 âge N = âge à l’achat + N
 année du profil = min(âge N, 10)
@@ -65,6 +67,12 @@ valeur résiduelle N = valeur résiduelle N−1 × (1 − taux N)
 
 Le kilométrage présent à l’achat ne pénalise pas une seconde fois la valeur : il sert uniquement à afficher le kilométrage projeté. Les douze profils conservent uniquement leurs dix taux historiques modifiables.
 
+Le montant de reprise est traité comme un apport propre au scénario. Il est déduit du coût d’acquisition et du TCO dès l’année 0, mais ne réduit pas l’assiette de décote du véhicule acheté ni sa valeur résiduelle projetée.
+
+Le panneau **Détail annuel par scénario** présente un échéancier de l’année 0 jusqu’à l’horizon choisi. L’année 0 regroupe le prix, les frais et la taxe, puis déduit les aides, remises et la reprise. Les années suivantes affichent séparément énergie, entretien, pneus, assurance et IK. La valeur résiduelle n’est comptée comme gain de trésorerie qu’à la dernière année, en supposant une revente.
+
+La ligne **Cumul de trésorerie** additionne réellement les flux affichés. La ligne **Valeur du véhicule déduite — non cumulable** montre l’assiette en année 0 puis la valeur résiduelle estimée à chaque fin d’année ; sa colonne « Total horizon » reprend uniquement la dernière valeur, sans les additionner. La ligne **TCO économique estimé** applique cette déduction. Les deux lectures rejoignent exactement le TCO net à l’horizon final.
+
 Le TCO brut additionne :
 
 ```text
@@ -72,7 +80,7 @@ décote + frais d’achat + taxe d’immatriculation
 + énergie cumulée + entretien cumulé + pneus cumulés + assurance cumulée
 ```
 
-Le TCO net soustrait ensuite `scenario.ikAnnuelleRetenue × horizon`. Le coût annuel divise ce résultat par l’horizon ; le coût par kilomètre le divise par le kilométrage total utilisé pour ce scénario. La référence de comparaison est le premier scénario thermique inclus, ou à défaut le premier scénario inclus. L’IK indicative et son bonus électrique restent de simples repères communs : ils n’écrasent jamais l’IK retenue d’un scénario.
+Le TCO net soustrait ensuite `scenario.montantReprise`, puis `scenario.ikAnnuelleRetenue × horizon`. Le coût annuel divise ce résultat par l’horizon ; le coût par kilomètre le divise par le kilométrage total utilisé pour ce scénario. La référence de comparaison est le premier scénario thermique inclus, ou à défaut le premier scénario inclus. L’IK indicative et son bonus électrique restent de simples repères communs : ils n’écrasent jamais l’IK retenue d’un scénario.
 
 ## Vérification
 
@@ -82,7 +90,7 @@ Les cas chiffrés des critères d’acceptation sont couverts par un script sans
 node tests/calculations.test.js
 ```
 
-Le test couvre notamment le décalage du profil selon l’âge, la répétition du taux âge 10, les projections kilométriques, les calculs TCO et les migrations V1/V2.
+Le test couvre notamment le décalage du profil selon l’âge, la répétition du taux âge 10, les projections kilométriques, la décomposition annuelle réconciliée, les calculs TCO et les migrations V1/V2.
 
 ## Limites volontaires de la V3
 

@@ -75,8 +75,8 @@
         'text-anchor': result.tcoNetApresIk < 0 ? 'end' : 'start', class: 'chart-value'
       }, money(result.tcoNetApresIk)));
     });
-    svg.appendChild(svgElement('text', { x: left, y: height - 12, class: 'chart-note' }, 'Valeurs négatives possibles lorsque les IK dépassent les coûts.'));
-    container.setAttribute('aria-label', 'TCO net après IK : ' + results.map(function (r) {
+    svg.appendChild(svgElement('text', { x: left, y: height - 12, class: 'chart-note' }, 'Valeurs négatives possibles lorsque la reprise et les IK dépassent les coûts.'));
+    container.setAttribute('aria-label', 'TCO net après reprise et IK : ' + results.map(function (r) {
       return r.name + ', ' + money(r.tcoNetApresIk);
     }).join(' ; '));
   }
@@ -93,6 +93,7 @@
     const bottom = 80;
     const values = [0];
     results.forEach(function (result) {
+      values.push(result.fraisAchat + result.taxes - result.montantReprise);
       result.seriesAnnuelles.forEach(function (point) { values.push(point.tcoNet); });
     });
     const min = Math.min.apply(null, values);
@@ -116,7 +117,7 @@
     svg.appendChild(svgElement('text', { x: (left + width - right) / 2, y: height - 30, 'text-anchor': 'middle', class: 'chart-note' }, 'Année'));
 
     results.forEach(function (result, index) {
-      const points = [{ year: 0, tcoNet: result.fraisAchat + result.taxes }].concat(result.seriesAnnuelles);
+      const points = [{ year: 0, tcoNet: result.fraisAchat + result.taxes - result.montantReprise }].concat(result.seriesAnnuelles);
       const path = points.map(function (point, pointIndex) {
         return (pointIndex ? 'L' : 'M') + x(point.year) + ' ' + y(point.tcoNet);
       }).join(' ');
@@ -197,7 +198,7 @@
   function renderCostBreakdownChart(container, allResults) {
     const results = (allResults || []).filter(function (result) { return result.includeInCharts; });
     const width = 900;
-    const height = Math.max(300, 130 + results.length * 62);
+    const height = Math.max(330, 152 + results.length * 62);
     const svg = setup(container, width, height, results.length ? '' : 'Aucun scénario inclus');
     if (!results.length) return;
     const components = [
@@ -206,19 +207,30 @@
       ['Pneus', 'pneusCumule', '#6d5cae'], ['Assurance', 'assuranceCumule', '#be4b5e']
     ];
     const labelWidth = 165;
-    const ikWidth = 120;
-    const positiveStart = labelWidth + ikWidth + 25;
+    const deductionWidth = 140;
+    const positiveStart = labelWidth + deductionWidth + 25;
     const positiveWidth = width - positiveStart - 30;
     const maxGross = Math.max(1, Math.max.apply(null, results.map(function (r) { return r.tcoBrut; })));
-    const maxIk = Math.max(1, Math.max.apply(null, results.map(function (r) { return r.ikRetenueCumulee; })));
+    const maxDeductions = Math.max(1, Math.max.apply(null, results.map(function (r) {
+      return r.montantReprise + r.ikRetenueCumulee;
+    })));
 
     results.forEach(function (result, row) {
       const y = 34 + row * 62;
       svg.appendChild(svgElement('text', { x: labelWidth - 10, y: y + 18, 'text-anchor': 'end', class: 'chart-label' }, shortName(result.name, 22)));
-      const ikBarWidth = result.ikRetenueCumulee / maxIk * ikWidth;
-      const ikRect = svgElement('rect', { x: positiveStart - ikBarWidth, y: y, width: ikBarWidth, height: 26, rx: 4, fill: '#334155', opacity: 0.75 });
-      ikRect.appendChild(svgElement('title', {}, 'IK déduites : ' + money(result.ikRetenueCumulee)));
-      svg.appendChild(ikRect);
+      let deductionCursor = positiveStart;
+      [
+        ['Reprise', result.montantReprise, '#0f766e'],
+        ['IK', result.ikRetenueCumulee, '#334155']
+      ].forEach(function (deduction) {
+        const segmentWidth = deduction[1] / maxDeductions * deductionWidth;
+        deductionCursor -= segmentWidth;
+        if (segmentWidth > 0) {
+          const rect = svgElement('rect', { x: deductionCursor, y: y, width: segmentWidth, height: 26, fill: deduction[2], opacity: 0.82 });
+          rect.appendChild(svgElement('title', {}, deduction[0] + ' déduite : ' + money(deduction[1])));
+          svg.appendChild(rect);
+        }
+      });
       let cursor = positiveStart;
       components.forEach(function (component) {
         const value = component[1] === 'fees' ? result.fraisAchat + result.taxes : result[component[1]];
@@ -233,15 +245,15 @@
       svg.appendChild(svgElement('text', { x: Math.min(width - 5, cursor + 7), y: y + 18, class: 'chart-value' }, money(result.tcoNetApresIk) + ' net'));
     });
     svg.appendChild(svgElement('line', { x1: positiveStart, y1: 20, x2: positiveStart, y2: 34 + results.length * 62 - 25, class: 'chart-axis' }));
-    svg.appendChild(svgElement('text', { x: positiveStart - 8, y: 20, 'text-anchor': 'end', class: 'chart-note' }, 'IK déduites ←'));
+    svg.appendChild(svgElement('text', { x: positiveStart - 8, y: 20, 'text-anchor': 'end', class: 'chart-note' }, 'Reprise + IK déduites ←'));
     svg.appendChild(svgElement('text', { x: positiveStart + 8, y: 20, class: 'chart-note' }, 'Coûts bruts →'));
-    components.forEach(function (component, index) {
-      const legendX = 20 + (index % 3) * 190;
-      const legendY = height - 43 + Math.floor(index / 3) * 22;
+    [['Reprise', '', '#0f766e'], ['IK', '', '#334155']].concat(components).forEach(function (component, index) {
+      const legendX = 20 + (index % 4) * 210;
+      const legendY = height - 43 + Math.floor(index / 4) * 22;
       svg.appendChild(svgElement('rect', { x: legendX, y: legendY - 10, width: 12, height: 12, rx: 2, fill: component[2] }));
       svg.appendChild(svgElement('text', { x: legendX + 18, y: legendY, class: 'chart-label' }, component[0]));
     });
-    container.setAttribute('aria-label', 'Décomposition des coûts bruts et IK déduites par scénario');
+    container.setAttribute('aria-label', 'Décomposition des coûts bruts, reprises et IK déduites par scénario');
   }
 
   TCO.charts = {

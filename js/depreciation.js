@@ -38,6 +38,43 @@
     return (profiles || []).find(function (profile) { return profile.key === key; }) || null;
   }
 
+  function calculerProfilDecote(prixDepart, prixEstime, nombreAnnees) {
+    const startPrice = parseFrenchNumber(prixDepart);
+    const estimatedPrice = parseFrenchNumber(prixEstime);
+    const years = parseFrenchNumber(nombreAnnees);
+    if (!Number.isFinite(startPrice) || startPrice <= 0) {
+      throw new Error('Le prix de départ doit être supérieur à 0.');
+    }
+    if (!Number.isFinite(estimatedPrice) || estimatedPrice <= 0) {
+      throw new Error('Le prix estimé doit être supérieur à 0.');
+    }
+    if (!Number.isFinite(years) || years <= 0) {
+      throw new Error("Le nombre d’années doit être supérieur à 0.");
+    }
+    if (!Number.isInteger(years) || years > 10) {
+      throw new Error("Le nombre d’années doit être un entier compris entre 1 et 10.");
+    }
+    if (estimatedPrice > startPrice) {
+      throw new Error('Le prix estimé doit être inférieur ou égal au prix de départ pour créer une décote.');
+    }
+
+    const ratio = estimatedPrice / startPrice;
+    const annualRate = 1 - Math.pow(ratio, 1 / years);
+    const profile = [];
+    for (let year = 0; year <= years; year += 1) {
+      const rawPrice = startPrice * Math.pow(ratio, year / years);
+      profile.push({
+        annee: year,
+        prix: year === 0 ? startPrice : (year === years ? estimatedPrice : Math.round(rawPrice)),
+        decoteDepuisDepart: 1 - rawPrice / startPrice
+      });
+    }
+    return {
+      tauxDecoteAnnuel: annualRate,
+      profil: profile
+    };
+  }
+
   function safeRate(value) {
     const rate = Number(value);
     return Number.isFinite(rate) ? Math.min(1, Math.max(0, rate)) : 0;
@@ -101,6 +138,7 @@
     formatRate: formatRate,
     getProfile: getProfile,
     getProfileByKey: getProfileByKey,
+    calculerProfilDecote: calculerProfilDecote,
     computeResidualValue: computeResidualValue,
     computeAnnualResidualSeries: computeAnnualResidualSeries,
     computeAgeShiftedResidualSeries: computeAgeShiftedResidualSeries,

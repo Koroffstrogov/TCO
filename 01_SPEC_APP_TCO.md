@@ -90,6 +90,8 @@ L’éditeur doit afficher une table avec :
 - année 1 à année 10 ;
 - actions : modifier, dupliquer, supprimer.
 
+Un assistant optionnel permet de générer les dix taux d’un profil à partir d’un prix de départ, d’un prix final estimé et d’une durée de 1 à 10 ans, selon une interpolation exponentielle composée. La trajectoire et le taux annuel moyen sont affichés avant de conserver les taux dans le profil sélectionné.
+
 L’utilisateur doit pouvoir sauvegarder plusieurs profils. La clé logique recommandée est :
 
 ```text
@@ -151,6 +153,7 @@ Ces champs sont nécessaires au calcul, mais ne constituent pas une base de réf
 | name | Nom du scénario | texte | — | selon scénario | Editable. |
 | energyType | Type d’énergie | enum | — | thermique/électrique | Contrôle le calcul énergie. |
 | acquisitionStatus | Statut | enum | — | occasion/neuf | Contrôle les frais et aides. |
+| montantReprise | Montant de reprise du véhicule | nombre | € | 0 | Déduit de l’acquisition et du TCO sans modifier l’assiette de décote. |
 | depreciationType | Type décote | enum | — | selon scénario | Doit correspondre aux profils disponibles. |
 | depreciationLevel | Niveau décote | enum | — | Central | Optimiste, Central, Pessimiste ou niveau utilisateur. |
 | consoThermiqueL100 | Consommation thermique | nombre | L/100 km | 0 | Utilisé si énergie thermique. |

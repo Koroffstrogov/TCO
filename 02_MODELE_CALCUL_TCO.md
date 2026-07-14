@@ -73,7 +73,7 @@ V1 simple : ne pas différencier la taxe par énergie, sauf si l’utilisateur d
 ### 2.5 Coût d’acquisition net payé
 
 ```text
-coutAcquisitionNet = max(0, prixVehicule - aidesApplicables) + fraisAchat + taxes
+coutAcquisitionNet = max(0, prixVehicule - aidesApplicables) + fraisAchat + taxes - montantReprise
 ```
 
 ### 2.6 Assiette de valeur résiduelle
@@ -109,6 +109,19 @@ Les taux doivent être manipulés en ratio interne :
 ```text
 12% = 0.12
 ```
+
+### 3.1 Profil de décote automatique
+
+Pour un prix de départ `P0`, un prix estimé `PX` et une durée entière `X` comprise entre 1 et 10 ans :
+
+```text
+tauxDecoteAnnuel = 1 - (PX / P0) ^ (1 / X)
+prixAnneeN = P0 × (PX / P0) ^ (N / X)
+```
+
+La prévisualisation contient les années `0` à `X`. Les extrémités reprennent exactement `P0` et `PX`, tandis que les valeurs intermédiaires sont arrondies à l’euro pour l’affichage. Le taux composé est appliqué aux dix taux du profil sélectionné, qui reste ensuite éditable et sauvegardé selon le format habituel.
+
+Les deux prix doivent être strictement positifs, `PX` doit être inférieur ou égal à `P0`, et `X` doit être un entier de 1 à 10.
 
 ## 4. Énergie
 
@@ -202,7 +215,7 @@ Afficher l’IK indicative et le bonus indicatif à titre d’aide à la saisie,
 
 ### 7.1 TCO brut
 
-Le TCO brut exclut les IK.
+Le TCO brut exclut la reprise et les IK.
 
 ```text
 tcoBrut = coutDecote
@@ -216,13 +229,13 @@ tcoBrut = coutDecote
 
 Note : le prix complet du véhicule n’est pas ajouté directement au TCO, car le coût de détention est représenté par la décote. Les frais et taxes non récupérables sont ajoutés séparément.
 
-### 7.2 TCO net après IK
+### 7.2 TCO net après reprise et IK
 
 ```text
-tcoNetApresIk = tcoBrut - ikRetenueCumulee
+tcoNetApresIk = tcoBrut - montantReprise - ikRetenueCumulee
 ```
 
-Le résultat peut être négatif dans des cas extrêmes. Ne pas bloquer ; afficher simplement la valeur.
+La reprise est déduite dès l’année 0 mais ne modifie pas l’assiette de décote du véhicule acheté. Le résultat peut être négatif dans des cas extrêmes. Ne pas bloquer ; afficher simplement la valeur.
 
 ### 7.3 Coût annuel moyen
 
@@ -257,12 +270,56 @@ coutDecoteN = assietteValeur - valeurResiduelleN
 coutsAnnuelsCumulesN = n * (coutEnergieAnnuel + entretienAnnuel + pneusAnnuel + assuranceAnnuel)
 ikCumuleeN = n * ikRetenueAnnuelle
 tcoBrutN = coutDecoteN + fraisAchat + taxes + coutsAnnuelsCumulesN
-tcoNetN = tcoBrutN - ikCumuleeN
+tcoNetN = tcoBrutN - montantReprise - ikCumuleeN
 ```
 
 Ces séries alimentent le graphique de TCO cumulé.
 
-## 9. Décomposition recommandée
+## 9. Flux annuels détaillés par scénario
+
+Le tableau annuel distingue les coûts, les gains et les deux lectures du résultat. Les aides et remises affichées sont limitées au montant effectivement déduit du prix :
+
+```text
+aidesRemisesAppliquees = prixVehicule - assietteValeur
+```
+
+En année 0 :
+
+```text
+couts0 = prixVehicule + fraisAchat + taxes
+gains0 = aidesRemisesAppliquees + montantReprise
+soldeNet0 = couts0 - gains0 = coutAcquisitionNet
+cumulTresorerie0 = soldeNet0
+```
+
+Pour chaque année `n` de 1 à l’horizon :
+
+```text
+coutsN = coutEnergieAnnuel + entretienAnnuel + pneusAnnuel + assuranceAnnuel
+gainsN = ikRetenueAnnuelle
+
+si n = horizonKpi :
+  gainsN = gainsN + valeurResiduelleN
+
+soldeNetN = coutsN - gainsN
+cumulTresorerieN = cumulTresorerieN-1 + soldeNetN
+```
+
+La valeur résiduelle constitue donc un flux théorique uniquement à l’horizon final. En parallèle, `tcoEconomiqueN` reprend `tcoNetN` afin d’afficher ce que coûterait une sortie à chaque fin d’année. À l’horizon :
+
+```text
+valeurVehiculeDeduite0 = assietteValeur
+valeurVehiculeDeduiteN = valeurResiduelleN
+```
+
+Cette valeur est un instantané non cumulable : elle explique la déduction appliquée au TCO économique de chaque colonne, mais n’est jamais additionnée aux gains annuels. La colonne « Total horizon » reprend seulement `valeurVehiculeDeduiteHorizon`.
+
+```text
+cumulTresorerieHorizon = tcoEconomiqueHorizon = tcoNetApresIk
+totalCouts - totalGains = tcoNetApresIk
+```
+
+## 10. Décomposition recommandée
 
 Pour chaque scénario, retourner une structure :
 
@@ -286,11 +343,21 @@ Pour chaque scénario, retourner une structure :
   "coutAnnuelMoyen": 0,
   "coutParKm": null,
   "ecartVsReference": 0,
-  "seriesAnnuelles": []
+  "seriesAnnuelles": [],
+  "decompositionAnnuelle": {
+    "annees": [],
+    "totaux": {
+      "couts": {},
+      "gains": {},
+      "totalCouts": 0,
+      "totalGains": 0,
+      "soldeNet": 0
+    }
+  }
 }
 ```
 
-## 10. Validation
+## 11. Validation
 
 Règles minimales :
 

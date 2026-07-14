@@ -19,7 +19,7 @@
     {
       id: 'thermal_used', name: 'Thermique occasion', energyType: 'thermal',
       acquisitionStatus: 'used', prixAchatNet: 0, taxeImmatriculation: 0,
-      fraisAchat: 0, aideAchat: 0, remiseComplementaire: 0,
+      fraisAchat: 0, aideAchat: 0, remiseComplementaire: 0, montantReprise: 0,
       entretienAnnuel: 0, pneusAnnuel: 0, assuranceAnnuelle: 0,
       ikAnnuelleRetenue: 0, depreciationType: 'Thermique occasion',
       depreciationLevel: 'Central', consoThermiqueL100: 0,
@@ -32,7 +32,7 @@
     {
       id: 'electric_used', name: 'Électrique occasion', energyType: 'electric',
       acquisitionStatus: 'used', prixAchatNet: 0, taxeImmatriculation: 0,
-      fraisAchat: 0, aideAchat: 0, remiseComplementaire: 0,
+      fraisAchat: 0, aideAchat: 0, remiseComplementaire: 0, montantReprise: 0,
       entretienAnnuel: 0, pneusAnnuel: 0, assuranceAnnuelle: 0,
       ikAnnuelleRetenue: 0, depreciationType: 'Tesla occasion',
       depreciationLevel: 'Central', consoThermiqueL100: 0,
@@ -45,7 +45,7 @@
     {
       id: 'electric_new', name: 'Électrique neuve', energyType: 'electric',
       acquisitionStatus: 'new', prixAchatNet: 0, taxeImmatriculation: 0,
-      fraisAchat: 0, aideAchat: 0, remiseComplementaire: 0,
+      fraisAchat: 0, aideAchat: 0, remiseComplementaire: 0, montantReprise: 0,
       entretienAnnuel: 0, pneusAnnuel: 0, assuranceAnnuelle: 0,
       ikAnnuelleRetenue: 0, depreciationType: 'Électrique neuve',
       depreciationLevel: 'Central', consoThermiqueL100: 0,
