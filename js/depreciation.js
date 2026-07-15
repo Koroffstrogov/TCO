@@ -38,6 +38,89 @@
     return (profiles || []).find(function (profile) { return profile.key === key; }) || null;
   }
 
+  const PROFILS_FORME_DECOTE = Object.freeze({
+    constant: Object.freeze({
+      label: 'Taux annuel constant',
+      coefficient: 1
+    }),
+    debutAccelere: Object.freeze({
+      label: 'Décote légèrement accélérée au début',
+      coefficient: 0.85
+    }),
+    initialeForte: Object.freeze({
+      label: 'Décote initiale forte',
+      coefficient: 0.65
+    })
+  });
+
+  function calculerProfilDecote(
+    prixDepart,
+    prixEstime,
+    nombreAnnees,
+    profilForme = 'constant',
+    nombreAnneesProjection = nombreAnnees
+  ) {
+    const startPrice = parseFrenchNumber(prixDepart);
+    const estimatedPrice = parseFrenchNumber(prixEstime);
+    const years = parseFrenchNumber(nombreAnnees);
+    const shapeKey = profilForme;
+    const projectionYears = parseFrenchNumber(nombreAnneesProjection);
+    if (!Number.isFinite(startPrice) || startPrice <= 0) {
+      throw new Error('Le prix de départ doit être supérieur à 0.');
+    }
+    if (!Number.isFinite(estimatedPrice) || estimatedPrice <= 0) {
+      throw new Error('Le prix estimé doit être supérieur à 0.');
+    }
+    if (!Number.isFinite(years) || years <= 0) {
+      throw new Error("Le nombre d’années doit être supérieur à 0.");
+    }
+    if (!Number.isInteger(years) || years > 10) {
+      throw new Error("Le nombre d’années doit être un entier compris entre 1 et 10.");
+    }
+    if (estimatedPrice > startPrice) {
+      throw new Error('Le prix estimé doit être inférieur ou égal au prix de départ pour créer une décote.');
+    }
+
+    const shape = Object.prototype.hasOwnProperty.call(PROFILS_FORME_DECOTE, shapeKey)
+      ? PROFILS_FORME_DECOTE[shapeKey]
+      : null;
+    if (!shape) {
+      throw new Error('Le profil de forme de décote est invalide.');
+    }
+    if (!Number.isInteger(projectionYears) || projectionYears < years || projectionYears > 10) {
+      throw new Error("Le nombre d’années de projection doit être un entier compris entre la durée cible et 10.");
+    }
+
+    const ratio = estimatedPrice / startPrice;
+    const coefficientForme = shape.coefficient;
+    const tauxAnnuelMoyenEquivalent = 1 - Math.pow(ratio, 1 / years);
+    const profile = [];
+    let previousRawPrice = startPrice;
+    for (let year = 0; year <= projectionYears; year += 1) {
+      const progression = year / years;
+      const progressionFormee = Math.pow(progression, coefficientForme);
+      const rawPrice = startPrice * Math.pow(ratio, progressionFormee);
+      profile.push({
+        annee: year,
+        prix: year === 0 ? startPrice : (year === years ? estimatedPrice : Math.round(rawPrice)),
+        decoteDepuisDepart: 1 - rawPrice / startPrice,
+        tauxDecoteAnnuelReel: year === 0 ? 0 : 1 - rawPrice / previousRawPrice
+      });
+      previousRawPrice = rawPrice;
+    }
+    return {
+      // Conservé pour compatibilité avec les appels existants.
+      tauxDecoteAnnuel: tauxAnnuelMoyenEquivalent,
+      tauxAnnuelMoyenEquivalent: tauxAnnuelMoyenEquivalent,
+      profilForme: shapeKey,
+      libelleProfilForme: shape.label,
+      coefficientForme: coefficientForme,
+      nombreAnnees: years,
+      nombreAnneesProjection: projectionYears,
+      profil: profile
+    };
+  }
+
   function safeRate(value) {
     const rate = Number(value);
     return Number.isFinite(rate) ? Math.min(1, Math.max(0, rate)) : 0;
@@ -101,6 +184,8 @@
     formatRate: formatRate,
     getProfile: getProfile,
     getProfileByKey: getProfileByKey,
+    PROFILS_FORME_DECOTE: PROFILS_FORME_DECOTE,
+    calculerProfilDecote: calculerProfilDecote,
     computeResidualValue: computeResidualValue,
     computeAnnualResidualSeries: computeAnnualResidualSeries,
     computeAgeShiftedResidualSeries: computeAgeShiftedResidualSeries,

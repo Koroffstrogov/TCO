@@ -16,7 +16,7 @@ const context = {
 };
 context.window.window = context.window;
 vm.createContext(context);
-['js/defaults.js', 'js/depreciation.js', 'js/storage.js', 'js/calculations.js'].forEach((file) => {
+['js/defaults.js', 'js/depreciation.js', 'js/storage.js', 'js/calculations.js', 'js/charts.js', 'js/ui.js'].forEach((file) => {
   vm.runInContext(fs.readFileSync(path.join(root, file), 'utf8'), context, { filename: file });
 });
 const TCO = context.window.TCO;
@@ -26,14 +26,186 @@ function close(actual, expected, label) {
   assert.ok(Math.abs(actual - expected) < 1e-8, `${label}: ${actual} !== ${expected}`);
 }
 
+// Le graphique de décomposition utilise une seule échelle monétaire des deux côtés de zéro.
+{
+  const geometry = TCO.charts.calculateCostBreakdownGeometry([
+    { tcoBrut: 20000, montantReprise: 2000, ikRetenueCumulee: 3000 },
+    { tcoBrut: 10000, montantReprise: 4000, ikRetenueCumulee: 6000 }
+  ], 900);
+  close(geometry.plotWidth, 610, 'largeur utile du graphique de décomposition');
+  close(geometry.scale, 610 / 30000, 'échelle monétaire unique');
+  const expectedWidthFor1000 = 610 / 30;
+  close(1000 * geometry.scale, expectedWidthFor1000, 'largeur de 1 000 € côté coûts');
+  close(1000 * geometry.scale, expectedWidthFor1000, 'largeur de 1 000 € côté déductions');
+  const gross = 20000;
+  const deductions = 5000;
+  const net = gross - deductions;
+  const grossEnd = geometry.zeroX + gross * geometry.scale;
+  const deductionWidth = deductions * geometry.scale;
+  const netX = geometry.zeroX + net * geometry.scale;
+  close(netX, grossEnd - deductionWidth, 'position du résultat net sur la même échelle');
+  assert.ok(geometry.zeroX >= geometry.plotLeft && geometry.zeroX <= geometry.plotRight, 'axe zéro dans la zone utile');
+  assert.ok(netX >= geometry.plotLeft && netX <= geometry.plotRight, 'marqueur net dans la zone utile');
+}
+
+// Les graphiques en courbes réservent une ligne de légende distincte à chaque véhicule.
+{
+  const layout = TCO.charts.calculateSeriesChartLayout(3);
+  assert.equal(layout.plotHeight, 300, 'hauteur de tracé constante');
+  assert.equal(layout.plotBottom - layout.top, layout.plotHeight, 'zone de tracé préservée');
+  assert.equal(layout.legendRowHeight, 24, 'interligne des légendes');
+  const firstLegendY = layout.legendStartY;
+  const secondLegendY = layout.legendStartY + layout.legendRowHeight;
+  const lastLegendY = layout.legendStartY + 2 * layout.legendRowHeight;
+  assert.equal(secondLegendY - firstLegendY, 24, 'une ligne distincte par véhicule');
+  assert.ok(firstLegendY > layout.plotBottom, 'légendes sous la zone de tracé');
+  assert.ok(lastLegendY < layout.height, 'dernière légende visible dans le SVG');
+}
+function assertAnnualReconciliation(result, label) {
+  const detail = result.decompositionAnnuelle;
+  const first = detail.annees[0];
+  const last = detail.annees[detail.annees.length - 1];
+  assert.equal(first.soldeNet, result.coutAcquisitionNet, `${label} : acquisition année 0`);
+  assert.equal(last.cumulTresorerie, result.tcoNetApresIk, `${label} : cumul final`);
+  assert.equal(last.tcoEconomique, result.tcoNetApresIk, `${label} : TCO économique final`);
+  close(detail.totaux.totalCouts - detail.totaux.totalGains, result.tcoNetApresIk, `${label} : coûts moins gains`);
+  assert.equal(detail.totaux.soldeNet, result.tcoNetApresIk, `${label} : solde total`);
+}
+function assertThreeAnnualReadings(result, label) {
+  const detail = result.decompositionAnnuelle;
+  const usageCosts = result.coutEnergieCumule + result.entretienCumule + result.pneusCumule + result.assuranceCumule;
+  const grossComposition = result.coutDecote + usageCosts + result.fraisAchat + result.taxes;
+  const cashReading = result.coutAcquisitionNet + usageCosts - result.ikRetenueCumulee - result.valeurResiduelle;
+  close(grossComposition, result.tcoBrut, `${label} : composition du TCO brut`);
+  close(result.tcoBrut - result.montantReprise, result.tcoNetApresIk + result.ikRetenueCumulee,
+    `${label} : coût net avant IK`);
+  close(cashReading, result.tcoNetApresIk, `${label} : trésorerie avec revente simulée`);
+  close(detail.annees[0].valeurVehiculeDeduite, result.assietteValeur, `${label} : valeur à l’achat`);
+  close(detail.annees[detail.annees.length - 1].valeurVehiculeDeduite, result.valeurResiduelle,
+    `${label} : valeur à l’horizon`);
+  detail.annees.forEach((point) => assert.ok(point.valeurVehiculeDeduite >= 0, `${label} : actif affiché positivement`));
+}
+
 assert.equal(state().version, 3);
-assert.equal(Object.keys(state().settings).length, 9, 'neuf hypothèses communes');
+assert.equal(Object.keys(state().settings).length, 12, 'douze hypothèses communes et options');
+assert.equal(state().settings.forcerKilometrageTotalAnnuel, false, 'forçage kilométrage désactivé par défaut');
+assert.equal(state().settings.forcerPrixEnergie, false, 'forçage prix énergie désactivé par défaut');
+assert.equal(state().settings.forcerIkIndicatives, false, 'forçage IK désactivé par défaut');
+{
+  const data = state();
+  data.settings.forcerKilometrageTotalAnnuel = 'true';
+  data.settings.forcerPrixEnergie = '1';
+  data.settings.forcerIkIndicatives = 1;
+  const normalized = TCO.storage.normalizeState(data);
+  assert.equal(normalized.settings.forcerKilometrageTotalAnnuel, true, 'forçage kilométrage normalisé en booléen');
+  assert.equal(normalized.settings.forcerPrixEnergie, true, 'forçage prix énergie normalisé en booléen');
+  assert.equal(normalized.settings.forcerIkIndicatives, true, 'forçage IK normalisé en booléen');
+}
 ['prixAchatNet', 'fraisAchat', 'taxeImmatriculation', 'aideAchat',
-  'remiseComplementaire', 'entretienAnnuel', 'pneusAnnuel',
+  'remiseComplementaire', 'montantReprise', 'entretienAnnuel', 'pneusAnnuel',
   'assuranceAnnuelle', 'ikAnnuelleRetenue', 'anneeMiseEnCirculation',
-  'kilometrageAchat', 'kilometrageAnnuelOverride'].forEach((field) => {
+  'kilometrageAchat', 'kilometrageAnnuelOverride', 'prixEnergieOverride'].forEach((field) => {
   assert.equal(Object.prototype.hasOwnProperty.call(state().scenarios[0], field), true, `champ scénario ${field}`);
 });
+
+// Les primitives de formulaire conservent une structure homogène et accessible.
+{
+  const field = TCO.ui.renderFormField({
+    id: 'kilometrage-test', helpId: 'kilometrage-test-help', label: 'Kilométrage annuel',
+    status: 'inherited', effect: 'calculated', help: 'Valeur commune : 15 000 km/an',
+    control: '<input id="kilometrage-test" readonly aria-readonly="true">'
+  });
+  assert.match(field, /class="form-field field effect-field effect-calculated is-inherited"/);
+  assert.match(field, /<label for="kilometrage-test">Kilométrage annuel<\/label>/);
+  assert.match(field, /status-inherited">Hérité/);
+  assert.match(field, /Valeur commune : 15 000 km\/an/);
+  assert.match(field, /aria-live="polite"/);
+
+  const section = TCO.ui.renderFormSection({
+    id: 'scenario-test-annual', title: 'Coûts annuels', help: 'Hypothèses répétées.', body: field
+  });
+  assert.match(section, /aria-labelledby="scenario-test-annual-title"/);
+  assert.match(section, /<h3 id="scenario-test-annual-title">Coûts annuels<\/h3>/);
+
+  const option = TCO.ui.renderOptionBanner({
+    key: 'forcerTest', label: 'Appliquer à tous', help: 'Valeur commune.'
+  }, true);
+  assert.match(option, /data-setting-toggle="forcerTest" checked/);
+  assert.match(option, /<strong>Appliquer à tous<\/strong>/);
+
+  const summary = TCO.ui.renderCalculatedSummary({
+    status: 'calculated', help: 'Résultat calculé.', items: [{ label: 'IK', value: '1 000 €' }]
+  });
+  assert.match(summary, /status-calculated">Calculé/);
+  assert.match(summary, /calculated-summary-item/);
+
+  const usedTitle = TCO.ui.getScenarioHeaderTitle({
+    name: 'Grand Scenic', energyType: 'thermal', acquisitionStatus: 'used',
+    anneeMiseEnCirculation: 2019, prixAchatNet: 12499, kilometrageAchat: 139602
+  });
+  assert.equal(usedTitle, [
+    'Grand Scenic', 'Thermique', '2019', TCO.ui.formatNumber(139602, 0) + ' km'
+  ].join(' · '));
+  assert.equal(TCO.ui.getScenarioHeaderTitle({
+    name: 'Occasion sans année', energyType: 'thermal', acquisitionStatus: 'used', kilometrageAchat: 100000
+  }), ['Occasion sans année', 'Thermique', 'Année inconnue', TCO.ui.formatNumber(100000, 0) + ' km'].join(' · '));
+  assert.equal(TCO.ui.getScenarioHeaderTitle({
+    name: 'Model Y', energyType: 'electric', acquisitionStatus: 'new',
+    prixAchatNet: 45000, kilometrageAchat: 20
+  }), 'Model Y · Électrique · Neuf');
+
+  const titleState = state();
+  Object.assign(titleState.scenarios[0], {
+    name: 'Grand Scenic', energyType: 'thermal', acquisitionStatus: 'used',
+    anneeMiseEnCirculation: 2019, prixAchatNet: 12499, kilometrageAchat: 139602
+  });
+  const titleResult = TCO.calculations.calculateScenarioTco(
+    titleState.settings, titleState.scenarios[0], titleState.depreciationProfiles
+  );
+  assert.equal(titleResult.displayTitle, usedTitle, 'titre enrichi propagé dans le résultat calculé');
+}
+
+{
+  const uiSource = fs.readFileSync(path.join(root, 'js/ui.js'), 'utf8');
+  ['Identification', 'Achat et financement', 'Coûts annuels', 'Décote', "Options d’affichage"].forEach((title) => {
+    assert.ok(uiSource.includes("title: '" + title + "'"), `section scénario ${title}`);
+  });
+  assert.match(uiSource, /readonly aria-readonly="true"/);
+  assert.match(uiSource, /Appliquer le prix de l’énergie à tous les scénarios/);
+  assert.match(uiSource, /'Kilométrage annuel'/);
+  assert.doesNotMatch(uiSource, /Kilométrage annuel du scénario/);
+  assert.doesNotMatch(uiSource, /Prix (?:essence|électricité) du scénario/);
+  assert.match(uiSource, /application: \{\s*title: 'Application aux scénarios'/);
+  assert.doesNotMatch(uiSource, /id: 'scenario-application'/);
+  assert.match(uiSource, /class="form-subsection"/);
+  assert.match(uiSource, /SCENARIO_HEADER_FIELDS = new Set/);
+  assert.match(uiSource, /'prixAchatNet', 'kilometrageAchat'/);
+  assert.match(uiSource, /getResultDisplayTitle\(result\)/);
+  assert.match(uiSource, /scenarioTextField\(scenario, 'name', 'Nom du véhicule'/);
+  assert.doesNotMatch(uiSource, /scenarioTextField\(scenario, 'name', 'Nom du scénario'/);
+  const identificationStart = uiSource.indexOf('const identificationFields');
+  const purchaseStart = uiSource.indexOf('const purchaseFields');
+  const purchaseMileageField = uiSource.indexOf("scenarioNumberField(scenario, 'kilometrageAchat'", identificationStart);
+  assert.ok(purchaseMileageField > identificationStart && purchaseMileageField < purchaseStart,
+    'kilométrage à l’achat rendu dans Identification');
+  assert.match(uiSource, /Entretien annuel & CT hors pneus/);
+
+  const chartsSource = fs.readFileSync(path.join(root, 'js/charts.js'), 'utf8');
+  assert.match(chartsSource, /function resultTitle\(result\)/);
+  assert.match(chartsSource, /result\.displayTitle \|\| result\.name/);
+  assert.match(chartsSource, /Entretien annuel & CT hors pneus/);
+
+  const htmlSource = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  assert.match(htmlSource, /<details class="indicator-guide">/);
+  assert.doesNotMatch(htmlSource, /<details class="indicator-guide" open/);
+
+  const cssSource = fs.readFileSync(path.join(root, 'css/styles.css'), 'utf8');
+  assert.match(cssSource, /scenario-section-grid \{ grid-template-columns: repeat\(4/);
+  assert.match(cssSource, /height: 42px/);
+  assert.match(cssSource, /field-support:empty \{ display: none; \}/);
+  assert.match(cssSource, /@media \(max-width: 900px\)/);
+  assert.match(cssSource, /@media \(max-width: 620px\)/);
+}
 
 {
   const data = state();
@@ -43,6 +215,154 @@ assert.equal(Object.keys(state().settings).length, 9, 'neuf hypothèses communes
   close(result.valeurResiduelle, 7920, 'valeur résiduelle thermique');
   close(result.coutDecote, 2080, 'décote thermique');
   close(result.tcoBrut, 2080, 'TCO thermique');
+}
+
+// La reprise réduit l’acquisition et le TCO, sans réduire la valeur décotée du véhicule acheté.
+{
+  const data = state();
+  data.settings.horizonKpi = 1;
+  Object.assign(data.scenarios[0], { prixAchatNet: 10000, montantReprise: 3000 });
+  const result = TCO.calculations.calculateScenarioTco(data.settings, data.scenarios[0], data.depreciationProfiles);
+  close(result.assietteValeur, 10000, 'assiette indépendante de la reprise');
+  close(result.coutAcquisitionNet, 7000, 'acquisition nette après reprise');
+  close(result.valeurResiduelle, 8800, 'valeur résiduelle indépendante de la reprise');
+  close(result.tcoBrut, 1200, 'TCO brut avant reprise');
+  close(result.tcoNetApresIk, -1800, 'TCO net après reprise');
+  close(result.seriesAnnuelles[0].tcoNet, -1800, 'reprise appliquée dès la première année');
+  const presentation = TCO.ui.getAnnualResultPresentation(result.tcoNetApresIk);
+  assert.equal(presentation.label, 'Excédent théorique après IK');
+  assert.equal(presentation.amount, 1800, 'excédent présenté comme montant positif');
+  assert.equal(presentation.className, 'surplus');
+  const rendered = TCO.ui.renderAnnualScenario(result, true, false, 0);
+  const renderedHeader = rendered.slice(0, rendered.indexOf('</summary>'));
+  assert.match(renderedHeader, /Excédent théorique après IK/);
+  assert.doesNotMatch(renderedHeader, /−/);
+  assert.doesNotMatch(renderedHeader, /de TCO final/);
+}
+
+// Échéancier complet : acquisition, coûts annuels, gains et valeur résiduelle finale.
+{
+  const data = state();
+  Object.assign(data.settings, { horizonKpi: 2, kilometrageTotalAnnuel: 10000, prixEssence: 2 });
+  Object.assign(data.scenarios[0], {
+    prixAchatNet: 20000, aideAchat: 1000, remiseComplementaire: 500,
+    montantReprise: 3000, fraisAchat: 400, taxeImmatriculation: 100,
+    consoThermiqueL100: 6, entretienAnnuel: 600, pneusAnnuel: 300,
+    assuranceAnnuelle: 800, ikAnnuelleRetenue: 1000
+  });
+  const result = TCO.calculations.calculateScenarioTco(data.settings, data.scenarios[0], data.depreciationProfiles);
+  const detail = result.decompositionAnnuelle;
+  assert.equal(detail.annees.length, 3, 'année 0 plus deux années de détention');
+  close(detail.annees[0].couts.achatVehicule, 20000, 'prix en année 0');
+  close(detail.annees[0].couts.fraisAchat, 400, 'frais en année 0');
+  close(detail.annees[0].couts.taxes, 100, 'taxe en année 0');
+  close(detail.annees[0].gains.aidesRemises, 1500, 'aides et remises appliquées');
+  close(detail.annees[0].gains.reprise, 3000, 'reprise en année 0');
+  close(detail.annees[0].totalCouts, 20500, 'total coûts année 0');
+  close(detail.annees[0].totalGains, 4500, 'total gains année 0');
+  close(detail.annees[0].soldeNet, 16000, 'acquisition nette année 0');
+  close(detail.annees[0].valeurVehiculeDeduite, 18500, 'assiette déduite en année 0');
+  close(detail.annees[1].couts.energie, 1200, 'énergie annuelle');
+  close(detail.annees[1].couts.entretien, 600, 'entretien annuel');
+  close(detail.annees[1].couts.pneus, 300, 'pneus annuels');
+  close(detail.annees[1].couts.assurance, 800, 'assurance annuelle');
+  close(detail.annees[1].gains.ik, 1000, 'IK annuelle');
+  close(detail.annees[1].gains.valeurResiduelle, 0, 'pas de revente avant l’horizon');
+  close(detail.annees[1].soldeNet, 1900, 'solde année 1');
+  close(detail.annees[1].cumulTresorerie, 17900, 'cumul année 1');
+  close(detail.annees[1].valeurVehiculeDeduite, 16280, 'valeur du véhicule déduite en année 1');
+  close(detail.annees[1].tcoEconomique, 1620, 'TCO économique année 1');
+  close(detail.annees[2].gains.valeurResiduelle, 14652, 'valeur résiduelle à l’horizon');
+  close(detail.annees[2].valeurVehiculeDeduite, 14652, 'valeur du véhicule déduite à l’horizon');
+  close(detail.annees[2].soldeNet, -12752, 'solde final avec revente');
+  close(detail.totaux.totalCouts, 26300, 'total des coûts horizon');
+  close(detail.totaux.totalGains, 21152, 'total des gains horizon');
+  assert.equal(Object.prototype.hasOwnProperty.call(detail.totaux.gains, 'valeurVehiculeDeduite'), false, 'valeur déduite non cumulée dans les gains');
+  assertAnnualReconciliation(result, 'échéancier complet');
+  assertThreeAnnualReadings(result, 'échéancier complet');
+
+  const rendered = TCO.ui.renderAnnualScenario(result, true, true, 0);
+  const expectedOrder = [
+    'Synthèse à 2 ans',
+    'Composition du TCO',
+    'Trésorerie annuelle',
+    'Valeur estimée du véhicule',
+    'Détail complet par poste'
+  ];
+  expectedOrder.reduce((previousPosition, label) => {
+    const position = rendered.indexOf(label);
+    assert.ok(position > previousPosition, `ordre du bloc ${label}`);
+    return position;
+  }, -1);
+  ['TCO brut du véhicule', 'Reprise déduite', 'Coût net avant IK', 'IK cumulées', 'Coût net après IK',
+    'Décote', 'Dépense nette cumulée', 'Déductions et recettes', 'Revente simulée', 'Cumul sur 2 ans'].forEach((label) => {
+    assert.match(rendered, new RegExp(label), `libellé annuel ${label}`);
+  });
+  ['Cumul de trésorerie', 'Valeur du véhicule déduite', 'Total horizon', '>Gains<', 'de TCO final'].forEach((obsoleteLabel) => {
+    assert.equal(rendered.includes(obsoleteLabel), false, `ancien libellé retiré : ${obsoleteLabel}`);
+  });
+  assert.match(rendered, /class="annual-horizon-metric cost"/);
+  assert.match(rendered, /class="annual-horizon-metric saving"/);
+  assert.match(rendered, /aria-labelledby="annual-scenario-0-summary-title"/);
+  assert.match(rendered, /caption class="visually-hidden"/);
+}
+
+// Les aides/remises sont plafonnées au prix, tandis qu’une reprise élevée reste un gain distinct.
+{
+  const data = state();
+  data.settings.horizonKpi = 1;
+  Object.assign(data.scenarios[0], {
+    prixAchatNet: 1000, aideAchat: 800, remiseComplementaire: 500,
+    montantReprise: 1500, fraisAchat: 100
+  });
+  const result = TCO.calculations.calculateScenarioTco(data.settings, data.scenarios[0], data.depreciationProfiles);
+  const detail = result.decompositionAnnuelle;
+  close(detail.annees[0].gains.aidesRemises, 1000, 'aides appliquées plafonnées au prix');
+  close(detail.annees[0].gains.reprise, 1500, 'reprise non confondue avec les aides');
+  close(detail.annees[0].soldeNet, -1400, 'acquisition négative autorisée');
+  close(detail.totaux.totalCouts, 1100, 'coûts avec aides supérieures au prix');
+  close(detail.totaux.totalGains, 2500, 'gains avec reprise élevée');
+  assertAnnualReconciliation(result, 'plafond des aides et reprise élevée');
+}
+
+// Horizon 1 : la valeur résiduelle n’apparaît que dans la dernière colonne.
+{
+  const data = state();
+  data.settings.horizonKpi = 1;
+  data.scenarios[0].prixAchatNet = 10000;
+  const result = TCO.calculations.calculateScenarioTco(data.settings, data.scenarios[0], data.depreciationProfiles);
+  assert.equal(result.decompositionAnnuelle.annees.length, 2);
+  close(result.decompositionAnnuelle.annees[0].gains.valeurResiduelle, 0, 'aucune valeur résiduelle en année 0');
+  close(result.decompositionAnnuelle.annees[1].gains.valeurResiduelle, 8800, 'valeur résiduelle en année 1');
+  assertAnnualReconciliation(result, 'horizon un an');
+  assertThreeAnnualReadings(result, 'horizon un an');
+}
+
+// Horizon 10 : les postes annuels sont répétés dix fois et la revente reste unique.
+{
+  const data = state();
+  data.settings.horizonKpi = 10;
+  Object.assign(data.scenarios[0], { prixAchatNet: 10000, entretienAnnuel: 100, ikAnnuelleRetenue: 50 });
+  const result = TCO.calculations.calculateScenarioTco(data.settings, data.scenarios[0], data.depreciationProfiles);
+  const detail = result.decompositionAnnuelle;
+  assert.equal(detail.annees.length, 11);
+  detail.annees.slice(1, -1).forEach((point) => close(point.gains.valeurResiduelle, 0, 'revente absente avant année 10'));
+  close(detail.totaux.couts.entretien, 1000, 'entretien répété dix ans');
+  close(detail.totaux.gains.ik, 500, 'IK répétées dix ans');
+  close(detail.totaux.gains.valeurResiduelle, result.valeurResiduelle, 'une seule valeur résiduelle');
+  assertAnnualReconciliation(result, 'horizon dix ans');
+  assertThreeAnnualReadings(result, 'horizon dix ans');
+}
+
+// Les montants nuls produisent un échéancier neutre mais complet.
+{
+  const data = state();
+  data.settings.horizonKpi = 3;
+  const result = TCO.calculations.calculateScenarioTco(data.settings, data.scenarios[0], data.depreciationProfiles);
+  assert.equal(result.decompositionAnnuelle.annees.length, 4);
+  close(result.decompositionAnnuelle.totaux.totalCouts, 0, 'coûts nuls');
+  close(result.decompositionAnnuelle.totaux.totalGains, 0, 'gains nuls');
+  assertAnnualReconciliation(result, 'échéancier nul');
 }
 
 {
@@ -65,6 +385,23 @@ assert.equal(Object.keys(state().settings).length, 9, 'neuf hypothèses communes
   const result = TCO.calculations.calculateScenarioTco(data.settings, data.scenarios[0], data.depreciationProfiles);
   close(result.coutEnergieAnnuel, 1800, 'énergie thermique annuelle');
   close(result.coutEnergieCumule, 5400, 'énergie thermique cumulée');
+}
+
+// Le forçage kilométrique ignore l’override du scénario sans l’effacer du stockage.
+{
+  const data = state();
+  Object.assign(data.settings, {
+    horizonKpi: 1, kilometrageTotalAnnuel: 15000, prixElectricite: 0.25,
+    forcerKilometrageTotalAnnuel: true
+  });
+  Object.assign(data.scenarios[1], { kilometrageAnnuelOverride: 12000, consoElectriqueKwh100: 16 });
+  const forced = TCO.calculations.calculateScenarioTco(data.settings, data.scenarios[1], data.depreciationProfiles);
+  close(forced.kilometrageAnnuelUtilise, 15000, 'kilométrage commun forcé');
+  close(forced.coutEnergieAnnuel, 600, 'énergie calculée avec le kilométrage commun');
+  assert.equal(data.scenarios[1].kilometrageAnnuelOverride, 12000, 'override scénario conservé');
+  data.settings.forcerKilometrageTotalAnnuel = false;
+  const custom = TCO.calculations.calculateScenarioTco(data.settings, data.scenarios[1], data.depreciationProfiles);
+  close(custom.kilometrageAnnuelUtilise, 12000, 'override scénario restauré quand le forçage est retiré');
 }
 
 {
@@ -91,6 +428,26 @@ assert.equal(Object.keys(state().settings).length, 9, 'neuf hypothèses communes
   const electric = TCO.calculations.calculateScenarioTco(data.settings, data.scenarios[1], data.depreciationProfiles);
   close(thermal.ikRetenueCumulee, 15000, 'IK thermique retenue');
   close(electric.ikRetenueCumulee, 17000, 'IK électrique retenue');
+}
+
+// Le forçage des IK indicatives applique le bonus uniquement aux scénarios électriques.
+{
+  const data = state();
+  Object.assign(data.settings, {
+    horizonKpi: 2, kilometrageProRembourseIk: 10000, baremeIkActuel: 0.5,
+    coefficientPrudenceIk: 0.9, majorationVehiculeElectrique: 0.2,
+    forcerIkIndicatives: true
+  });
+  data.scenarios[0].ikAnnuelleRetenue = 123;
+  data.scenarios[1].ikAnnuelleRetenue = 456;
+  const thermal = TCO.calculations.calculateScenarioTco(data.settings, data.scenarios[0], data.depreciationProfiles);
+  const electric = TCO.calculations.calculateScenarioTco(data.settings, data.scenarios[1], data.depreciationProfiles);
+  close(thermal.ikRetenueAnnuelle, 4500, 'IK indicative forcée pour le thermique');
+  close(electric.ikRetenueAnnuelle, 5400, 'IK indicative et bonus forcés pour l’électrique');
+  close(thermal.ikRetenueCumulee, 9000, 'IK thermique forcée sur l’horizon');
+  close(electric.ikRetenueCumulee, 10800, 'IK électrique forcée sur l’horizon');
+  assert.equal(data.scenarios[0].ikAnnuelleRetenue, 123, 'IK thermique personnalisée conservée');
+  assert.equal(data.scenarios[1].ikAnnuelleRetenue, 456, 'IK électrique personnalisée conservée');
 }
 
 {
@@ -122,6 +479,35 @@ assert.equal(Object.keys(state().settings).length, 9, 'neuf hypothèses communes
   const result = TCO.calculations.calculateScenarioTco(data.settings, data.scenarios[1], data.depreciationProfiles);
   close(result.coutEnergieAnnuel, 576, 'overrides kilométrage et prix énergie');
   close(result.kilometrageAnnuelUtilise, 12000, 'kilométrage scénario utilisé');
+}
+
+// Le prix d’énergie commun forcé ignore l’override sans supprimer sa valeur personnalisée.
+{
+  const data = state();
+  Object.assign(data.settings, {
+    horizonKpi: 1,
+    kilometrageTotalAnnuel: 10000,
+    prixEssence: 2,
+    prixElectricite: 0.25,
+    forcerPrixEnergie: true
+  });
+  Object.assign(data.scenarios[0], { consoThermiqueL100: 6, prixEnergieOverride: 2.5 });
+  Object.assign(data.scenarios[1], { consoElectriqueKwh100: 16, prixEnergieOverride: 0.4 });
+
+  const thermalForced = TCO.calculations.calculateScenarioTco(data.settings, data.scenarios[0], data.depreciationProfiles);
+  const electricForced = TCO.calculations.calculateScenarioTco(data.settings, data.scenarios[1], data.depreciationProfiles);
+  close(thermalForced.prixEnergieUtilise, 2, 'prix essence commun forcé');
+  close(electricForced.prixEnergieUtilise, 0.25, 'prix électricité commun forcé');
+  close(thermalForced.coutEnergieAnnuel, 1200, 'coût thermique avec prix commun forcé');
+  close(electricForced.coutEnergieAnnuel, 400, 'coût électrique avec prix commun forcé');
+  assert.equal(data.scenarios[0].prixEnergieOverride, 2.5, 'prix essence personnalisé conservé');
+  assert.equal(data.scenarios[1].prixEnergieOverride, 0.4, 'prix électricité personnalisé conservé');
+
+  data.settings.forcerPrixEnergie = false;
+  const thermalCustom = TCO.calculations.calculateScenarioTco(data.settings, data.scenarios[0], data.depreciationProfiles);
+  const electricCustom = TCO.calculations.calculateScenarioTco(data.settings, data.scenarios[1], data.depreciationProfiles);
+  close(thermalCustom.prixEnergieUtilise, 2.5, 'prix essence personnalisé restauré');
+  close(electricCustom.prixEnergieUtilise, 0.4, 'prix électricité personnalisé restauré');
 }
 
 // Une occasion âgée de 5 ans commence au taux âge 6.
@@ -197,6 +583,87 @@ assert.equal(Object.keys(state().settings).length, 9, 'neuf hypothèses communes
 ['12', '12%', '12,0%', '0,12', '0.12'].forEach((value) => {
   close(TCO.depreciation.normalizeRate(value), 0.12, `normalisation de ${value}`);
 });
+
+// Profil de décote automatique par interpolation exponentielle, avec trois formes.
+{
+  const ratio = 25000 / 45000;
+  const expectedEquivalentRate = 1 - Math.pow(ratio, 1 / 5);
+  const defaultConstant = TCO.depreciation.calculerProfilDecote(45000, 25000, 5);
+  const constant = TCO.depreciation.calculerProfilDecote(45000, 25000, 5, 'constant', 10);
+  const accelerated = TCO.depreciation.calculerProfilDecote(45000, 25000, 5, 'debutAccelere', 10);
+  const strong = TCO.depreciation.calculerProfilDecote(45000, 25000, 5, 'initialeForte', 10);
+
+  assert.deepEqual(Object.keys(TCO.depreciation.PROFILS_FORME_DECOTE), ['constant', 'debutAccelere', 'initialeForte']);
+  assert.equal(TCO.depreciation.PROFILS_FORME_DECOTE.constant.coefficient, 1);
+  assert.equal(TCO.depreciation.PROFILS_FORME_DECOTE.debutAccelere.coefficient, 0.85);
+  assert.equal(TCO.depreciation.PROFILS_FORME_DECOTE.initialeForte.coefficient, 0.65);
+  assert.equal(defaultConstant.profil.length, 6, 'la projection par défaut s’arrête à l’année cible');
+  assert.deepEqual(defaultConstant.profil, constant.profil.slice(0, 6), 'le profil constant reste compatible avec l’existant');
+
+  [constant, accelerated, strong].forEach((generated) => {
+    close(generated.tauxDecoteAnnuel, expectedEquivalentRate, 'alias du taux moyen équivalent');
+    close(generated.tauxAnnuelMoyenEquivalent, expectedEquivalentRate, 'taux annuel moyen équivalent');
+    assert.ok(Math.abs(generated.tauxAnnuelMoyenEquivalent - 0.1109) < 0.0001, 'taux automatique proche de 11,09 %');
+    assert.equal(generated.profil.length, 11, 'projection complète de l’année 0 à l’année 10');
+    assert.equal(generated.profil[0].annee, 0);
+    assert.equal(generated.profil[0].prix, 45000, 'prix initial exact');
+    assert.equal(generated.profil[5].prix, 25000, 'prix cible exact');
+    assert.equal(generated.profil[10].annee, 10, 'courbe prolongée après l’année cible');
+
+    const reconstructedTarget = generated.profil.slice(1, 6).reduce(function (price, point) {
+      return price * (1 - point.tauxDecoteAnnuelReel);
+    }, 45000);
+    close(reconstructedTarget, 25000, 'les taux annuels réels atteignent exactement la cible');
+  });
+
+  assert.equal(constant.profilForme, 'constant');
+  assert.equal(constant.libelleProfilForme, 'Taux annuel constant');
+  assert.equal(constant.coefficientForme, 1);
+  assert.equal(constant.nombreAnnees, 5);
+  assert.equal(constant.nombreAnneesProjection, 10);
+  assert.equal(constant.profil[2].prix, Math.round(45000 * Math.pow(ratio, 2 / 5)), 'trajectoire constante inchangée');
+  close(constant.profil[3].decoteDepuisDepart, 1 - Math.pow(ratio, 3 / 5), 'décote cumulée constante année 3');
+  constant.profil.slice(1).forEach((point) => {
+    close(point.tauxDecoteAnnuelReel, expectedEquivalentRate, 'taux réel constant');
+  });
+
+  assert.ok(accelerated.profil[1].prix < constant.profil[1].prix, 'c = 0,85 accélère légèrement la décote initiale');
+  assert.ok(strong.profil[1].prix < accelerated.profil[1].prix, 'c = 0,65 accentue davantage la décote initiale');
+  assert.ok(accelerated.profil[1].tauxDecoteAnnuelReel > constant.profil[1].tauxDecoteAnnuelReel);
+  assert.ok(strong.profil[1].tauxDecoteAnnuelReel > accelerated.profil[1].tauxDecoteAnnuelReel);
+  assert.ok(accelerated.profil[1].tauxDecoteAnnuelReel > accelerated.profil[5].tauxDecoteAnnuelReel, 'la décote c = 0,85 ralentit');
+  assert.ok(strong.profil[1].tauxDecoteAnnuelReel > strong.profil[5].tauxDecoteAnnuelReel, 'la décote c = 0,65 ralentit');
+}
+
+[
+  [0, 25000, 5, /prix de départ/],
+  [-1, 25000, 5, /prix de départ/],
+  [45000, 0, 5, /prix estimé/],
+  [45000, -1, 5, /prix estimé/],
+  [45000, 25000, 0, /nombre d’années/],
+  [45000, 25000, -1, /nombre d’années/],
+  [45000, 25000, 2.5, /entier compris entre 1 et 10/],
+  [45000, 25000, 11, /entier compris entre 1 et 10/],
+  [25000, 45000, 5, /inférieur ou égal/]
+].forEach((testCase) => {
+  assert.throws(() => TCO.depreciation.calculerProfilDecote(testCase[0], testCase[1], testCase[2]), testCase[3]);
+});
+
+assert.throws(
+  () => TCO.depreciation.calculerProfilDecote(45000, 25000, 5, 'inconnu'),
+  /profil de forme de décote est invalide/
+);
+[
+  [4, /projection/],
+  [10.5, /projection/],
+  [11, /projection/]
+].forEach((testCase) => {
+  assert.throws(
+    () => TCO.depreciation.calculerProfilDecote(45000, 25000, 5, 'constant', testCase[0]),
+    testCase[1]
+  );
+});
+
 assert.equal(TCO.defaults.DEFAULT_DEPRECIATION_PROFILES.length, 12);
 TCO.defaults.DEFAULT_DEPRECIATION_PROFILES.forEach((profile) => {
   assert.equal(profile.rates.length, 10);
@@ -248,6 +715,7 @@ TCO.defaults.DEFAULT_DEPRECIATION_PROFILES.forEach((profile) => {
   assert.equal(migrated.version, 3);
   assert.equal(Object.prototype.hasOwnProperty.call(migrated.settings, 'prixNetDepartElec'), false);
   assert.equal(migrated.scenarios[0].prixAchatNet, 12000);
+  assert.equal(migrated.scenarios[0].montantReprise, 0, 'reprise absente migrée à zéro');
   assert.equal(migrated.scenarios[0].fraisAchat, 300);
   assert.equal(migrated.scenarios[0].ikAnnuelleRetenue, 3000);
   assert.equal(migrated.scenarios[1].prixAchatNet, 30000);
@@ -275,6 +743,7 @@ TCO.defaults.DEFAULT_DEPRECIATION_PROFILES.forEach((profile) => {
     delete scenario.anneeMiseEnCirculation;
     delete scenario.kilometrageAchat;
     delete scenario.kilometrageAnnuelOverride;
+    delete scenario.montantReprise;
     scenario.kilometrageTotalAnnuelOverride = null;
   });
   v2.depreciationProfiles.forEach((profile) => {
@@ -287,6 +756,7 @@ TCO.defaults.DEFAULT_DEPRECIATION_PROFILES.forEach((profile) => {
   assert.equal(migrated.scenarios[0].anneeMiseEnCirculation, null, 'occasion sans année conservée nulle');
   assert.equal(migrated.scenarios[0].kilometrageAchat, 0);
   assert.equal(migrated.scenarios[0].kilometrageAnnuelOverride, null);
+  assert.equal(migrated.scenarios[0].montantReprise, 0, 'reprise V2 absente migrée à zéro');
   assert.equal(migrated.scenarios[2].anneeMiseEnCirculation, new Date().getFullYear(), 'année courante pour un véhicule neuf');
   assert.equal(Object.prototype.hasOwnProperty.call(migrated.depreciationProfiles[0], 'sensibiliteKilometrage'), false);
   assert.equal(Object.prototype.hasOwnProperty.call(migrated.depreciationProfiles[0], 'kilometrageReferenceAnnuel'), false);

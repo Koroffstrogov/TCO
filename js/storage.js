@@ -16,6 +16,9 @@
     scenarios: 'tcoApp.v1.scenarios',
     profiles: 'tcoApp.v1.depreciationProfiles'
   };
+  const BOOLEAN_SETTING_KEYS = new Set([
+    'forcerKilometrageTotalAnnuel', 'forcerPrixEnergie', 'forcerIkIndicatives'
+  ]);
 
   function read(key, fallback) {
     try {
@@ -32,6 +35,11 @@
     const settings = source.settings && typeof source.settings === 'object' ? source.settings : {};
     const normalizedSettings = {};
     Object.keys(defaults.settings).forEach(function (key) {
+      if (BOOLEAN_SETTING_KEYS.has(key)) {
+        const value = settings[key];
+        normalizedSettings[key] = value === true || value === 1 || value === '1' || value === 'true';
+        return;
+      }
       const number = Number(settings[key]);
       normalizedSettings[key] = Number.isFinite(number) ? number : defaults.settings[key];
     });
@@ -105,6 +113,7 @@
           fraisAchat: scenarioNumber('fraisAchat', legacyFees),
           aideAchat: scenarioNumber('aideAchat', isElectric && isNew ? oldNumber('aideVeNeuveEligible') : 0),
           remiseComplementaire: scenarioNumber('remiseComplementaire', isElectric && isNew ? oldNumber('surbonusRemiseComplementaire') : 0),
+          montantReprise: scenarioNumber('montantReprise', 0),
           entretienAnnuel: scenarioNumber('entretienAnnuel', legacyMaintenance),
           pneusAnnuel: scenarioNumber('pneusAnnuel', legacyTyres),
           assuranceAnnuelle: scenarioNumber('assuranceAnnuelle', legacyInsurance),

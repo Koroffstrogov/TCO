@@ -39,6 +39,17 @@
       <div id="results-table" class="table-wrap result-table-wrap"></div>
     </section>
 
+    <section class="panel annual-detail-panel" aria-labelledby="annual-detail-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Économie, trésorerie et valeur de l’actif</p>
+          <h2 id="annual-detail-title">Détail annuel par scénario</h2>
+        </div>
+      </div>
+      <p id="annual-detail-help" class="section-help">Chaque scénario sépare le résultat économique, les flux de trésorerie et la valeur estimée du véhicule. La revente reste une simulation comptée uniquement à l’horizon final.</p>
+      <div id="annual-breakdowns" class="annual-breakdown-list" aria-describedby="annual-detail-help"></div>
+    </section>
+
     <div class="workspace-grid">
       <section class="panel" aria-labelledby="settings-title">
         <div class="section-heading">
@@ -47,15 +58,17 @@
             <h2 id="settings-title">Hypothèses communes</h2>
           </div>
         </div>
-        <div class="effect-guide" aria-label="Légende des effets sur le TCO">
-          <span class="effect-badge effect-up">↑ TCO</span><span>coût qui augmente le TCO</span>
-          <span class="effect-badge effect-down">↓ TCO</span><span>montant qui réduit le TCO</span>
-          <span class="effect-badge effect-used">Calcul</span><span>utilisé, effet variable</span>
-          <span class="effect-badge effect-indicative">Indicatif</span><span>repère non injecté dans le TCO</span>
-          <span class="effect-badge effect-projection">Projection</span><span>sert au suivi, sans pénalité initiale</span>
-          <span class="effect-badge effect-display">Hors TCO</span><span>description ou affichage seulement</span>
-        </div>
-        <div id="ik-indicators" class="indicator-strip" aria-live="polite"></div>
+        <details class="indicator-guide">
+          <summary>Comprendre les indicateurs</summary>
+          <div class="indicator-guide-content" aria-label="Légende des effets et statuts des champs">
+            <p><span class="guide-swatch guide-cost" aria-hidden="true"></span><strong>Coût</strong><span>augmente le TCO.</span></p>
+            <p><span class="guide-swatch guide-saving" aria-hidden="true"></span><strong>Réduction ou recette</strong><span>diminue le TCO.</span></p>
+            <p><span class="field-status status-calculated">Calculé</span><span>utilisé pour produire un résultat.</span></p>
+            <p><span class="field-status status-indicative">Indicatif</span><span>repère sans effet automatique.</span></p>
+            <p><span class="field-status status-inherited">Hérité</span><span>valeur commune appliquée en lecture seule.</span></p>
+            <p><span class="field-status status-display">Hors calcul</span><span>sert uniquement à décrire ou afficher.</span></p>
+          </div>
+        </details>
         <form id="settings-form" novalidate></form>
       </section>
 
@@ -67,7 +80,7 @@
           </div>
           <button id="add-scenario-button" class="button small" type="button">Ajouter</button>
         </div>
-        <p class="scenario-effect-note"><span class="effect-badge effect-down">↓ TCO</span> Les aides, remises et IK sont déduites. <span class="effect-badge effect-up">↑ TCO</span> Les autres coûts s’ajoutent ou alimentent la décote.</p>
+        <p class="scenario-intro">Chaque carte regroupe les hypothèses d’un véhicule. Les valeurs héritées des hypothèses communes sont signalées et restent en lecture seule.</p>
         <div id="scenarios-list" class="scenario-list"></div>
       </section>
     </div>
@@ -81,8 +94,8 @@
       </div>
       <div class="charts-grid">
         <figure class="chart-card">
-          <figcaption>TCO net après IK</figcaption>
-          <div id="tco-bar-chart" class="chart" role="img" aria-label="Graphique en barres du TCO net après IK"></div>
+          <figcaption>TCO net après reprise et IK</figcaption>
+          <div id="tco-bar-chart" class="chart" role="img" aria-label="Graphique en barres du TCO net après reprise et IK"></div>
         </figure>
         <figure class="chart-card wide">
           <figcaption>TCO net cumulé, année par année</figcaption>
@@ -111,6 +124,45 @@
         </div>
       </div>
       <p class="section-help">Saisissez par exemple <code>12</code>, <code>12%</code>, <code>12,5%</code> ou <code>0.125</code>. Les colonnes correspondent à l’âge du véhicule : une occasion âgée de 5 ans commence au taux « Âge 6 ». Au-delà de 10 ans, le taux « Âge 10 » est répété.</p>
+      <details id="automatic-depreciation" class="automatic-depreciation">
+        <summary>Profil de décote automatique</summary>
+        <div class="automatic-depreciation-content">
+          <p class="section-help">Relie exactement le prix de départ au prix estimé selon la forme choisie, puis prolonge la même courbe jusqu’à l’année 10. Les dix taux générés restent ensuite modifiables manuellement.</p>
+          <form id="automatic-depreciation-form" novalidate>
+            <div class="automatic-depreciation-grid">
+              <div class="field">
+                <label for="automatic-profile-target">Profil à modifier</label>
+                <select id="automatic-profile-target" aria-describedby="automatic-depreciation-error" required></select>
+              </div>
+              <div class="field">
+                <label for="automatic-shape-profile">Forme de la décote</label>
+                <select id="automatic-shape-profile" aria-describedby="automatic-depreciation-error">
+                  <option value="constant">Taux annuel constant</option>
+                  <option value="debutAccelere">Décote légèrement accélérée au début</option>
+                  <option value="initialeForte">Décote initiale forte</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="automatic-start-price">Prix de départ</label>
+                <div class="input-wrap"><input id="automatic-start-price" type="text" inputmode="decimal" value="45000" aria-describedby="automatic-depreciation-error"><span class="unit">€</span></div>
+              </div>
+              <div class="field">
+                <label for="automatic-estimated-price">Prix estimé final</label>
+                <div class="input-wrap"><input id="automatic-estimated-price" type="text" inputmode="decimal" value="25000" aria-describedby="automatic-depreciation-error"><span class="unit">€</span></div>
+              </div>
+              <div class="field">
+                <label for="automatic-years">Durée</label>
+                <div class="input-wrap"><input id="automatic-years" type="text" inputmode="numeric" value="5" aria-describedby="automatic-depreciation-error"><span class="unit">années</span></div>
+              </div>
+            </div>
+            <div class="automatic-depreciation-actions">
+              <button class="button primary" type="submit">Générer et appliquer</button>
+              <p id="automatic-depreciation-error" class="field-error" role="alert" aria-live="assertive"></p>
+            </div>
+          </form>
+          <div id="automatic-depreciation-preview" class="automatic-depreciation-preview" aria-live="polite" hidden></div>
+        </div>
+      </details>
       <div id="depreciation-editor" class="depreciation-wrap"></div>
     </section>
   </main>
