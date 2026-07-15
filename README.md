@@ -18,9 +18,13 @@ Les navigateurs peuvent restreindre `localStorage` en navigation privée. L’ap
 
 Dans le graphique **Décomposition des coûts à l’horizon**, les coûts bruts et les déductions utilisent la même échelle en euros par pixel autour de l’axe zéro. Un marqueur distinct positionne le résultat net après reprise et IK pour chaque scénario.
 
+Dans les graphiques en courbes, chaque véhicule dispose de sa propre ligne de légende afin que les intitulés complets restent lisibles.
+
 Les nombres acceptent la virgule ou le point décimal. Les pourcentages acceptent notamment `12`, `12%`, `12,5%` et `0.125` ; ils sont stockés sous forme de ratio (`0.12` pour 12 %). Un champ vide vaut temporairement zéro. Les saisies négatives ou hors limites sont signalées sans bloquer le reste de l’interface.
 
 Les champs partagent la même structure visuelle : libellé, contrôle de hauteur uniforme, unité alignée à droite et zone d’aide stable. Les accents colorés distinguent les coûts des réductions ou recettes. Quatre badges sémantiques sont réservés aux cas utiles : **Calculé**, **Indicatif**, **Hérité** et **Hors calcul**. Leur signification est disponible dans la légende compacte « Comprendre les indicateurs », repliée par défaut.
+
+Le titre de chaque scénario reprend son nom et son type d’énergie. Pour une occasion, il ajoute l’année de mise en circulation et le kilométrage à l’achat ; pour un véhicule neuf, il affiche simplement **Neuf**. Ce titre se met à jour pendant la saisie et sert d’identifiant dans les synthèses, tableaux, détails annuels et graphiques.
 
 Lorsque l’application globale du kilométrage, du prix de l’énergie ou des IK est activée, le champ correspondant de chaque scénario passe en lecture seule et affiche le badge **Hérité**. La valeur personnalisée reste conservée et redevient disponible lorsque l’application globale est désactivée.
 
@@ -47,7 +51,7 @@ Chaque scénario est la source de vérité pour son véhicule :
 - prix d’achat net, frais d’achat et taxe d’immatriculation ;
 - aide à l’achat, remise complémentaire et montant de reprise du véhicule ;
 - consommation adaptée à l’énergie ;
-- entretien, pneus et assurance annuels ;
+- entretien annuel et contrôle technique hors pneus, pneus et assurance annuels ;
 - IK annuelle effectivement retenue dans le TCO ;
 - énergie, statut et profil de décote ;
 - année de mise en circulation, kilométrage à l’achat et éventuel kilométrage annuel propre au scénario.
@@ -85,7 +89,7 @@ Le TCO brut additionne :
 
 ```text
 décote + frais d’achat + taxe d’immatriculation
-+ énergie cumulée + entretien cumulé + pneus cumulés + assurance cumulée
++ énergie cumulée + entretien et CT hors pneus cumulés + pneus cumulés + assurance cumulée
 ```
 
 Le TCO net soustrait ensuite `scenario.montantReprise`, puis `scenario.ikAnnuelleRetenue × horizon`. Le coût annuel divise ce résultat par l’horizon ; le coût par kilomètre le divise par le kilométrage total utilisé pour ce scénario. La référence de comparaison est le premier scénario thermique inclus, ou à défaut le premier scénario inclus. Par défaut, l’IK indicative et son bonus électrique restent de simples repères communs. Avec la coche **Appliquer les IK indicatives aux scénarios**, l’IK retenue est forcée à l’IK indicative pour un thermique, et à l’IK indicative augmentée du bonus pour un électrique ; les montants personnalisés restent conservés et reviennent dès que la coche est retirée.
@@ -104,7 +108,7 @@ Le test couvre notamment le décalage du profil selon l’âge, la répétition 
 
 - aucune donnée de prix, de marché ou de fiscalité n’est récupérée ;
 - aucun modèle automobile n’est proposé ; les mentions « Tesla » ne nomment que les profils de décote imposés par la spécification ;
-- les coûts d’entretien, pneus et assurance sont des montants annuels simplifiés ;
+- les coûts d’entretien et de contrôle technique hors pneus, de pneus et d’assurance sont des montants annuels simplifiés ;
 - la valeur résiduelle est une projection mécanique des dix taux manuels ;
 - les prix d’énergie et consommations sont constants sur l’horizon ;
 - l’IK retenue est une hypothèse utilisateur, pas un calcul réglementaire ;

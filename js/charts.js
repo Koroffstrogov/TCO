@@ -39,6 +39,29 @@
     return text.length > length ? text.slice(0, length - 1) + '…' : text;
   }
 
+  function resultTitle(result) {
+    return String(result.displayTitle || result.name || 'Sans nom');
+  }
+
+  function calculateSeriesChartLayout(resultCount) {
+    const legendRows = Math.max(0, Math.floor(Number(resultCount) || 0));
+    const top = 30;
+    const plotHeight = 300;
+    const legendRowHeight = 24;
+    const plotBottom = top + plotHeight;
+    const legendStartY = plotBottom + 78;
+    const height = legendStartY + legendRows * legendRowHeight - 8;
+    return {
+      top: top,
+      plotHeight: plotHeight,
+      plotBottom: plotBottom,
+      bottom: height - plotBottom,
+      height: height,
+      legendRowHeight: legendRowHeight,
+      legendStartY: legendStartY
+    };
+  }
+
   function renderTcoBarChart(container, allResults) {
     const results = (allResults || []).filter(function (result) { return result.includeInCharts; });
     const width = 760;
@@ -46,7 +69,7 @@
     const svg = setup(container, width, height, results.length ? '' : 'Aucun scénario inclus');
     if (!results.length) return;
 
-    const left = 175;
+    const left = 250;
     const right = 35;
     const top = 30;
     const bottom = 45;
@@ -63,12 +86,16 @@
       const valueX = x(result.tcoNetApresIk);
       const startX = Math.min(zeroX, valueX);
       const barWidth = Math.max(2, Math.abs(valueX - zeroX));
-      svg.appendChild(svgElement('text', { x: left - 12, y: y + 16, 'text-anchor': 'end', class: 'chart-label' }, shortName(result.name, 22)));
+      const scenarioLabel = svgElement('text', {
+        x: left - 12, y: y + 16, 'text-anchor': 'end', class: 'chart-label'
+      }, shortName(resultTitle(result), 38));
+      scenarioLabel.appendChild(svgElement('title', {}, resultTitle(result)));
+      svg.appendChild(scenarioLabel);
       const rect = svgElement('rect', {
         x: startX, y: y, width: barWidth, height: 26, rx: 5,
         fill: COLORS[index % COLORS.length], class: 'chart-bar'
       });
-      rect.appendChild(svgElement('title', {}, result.name + ' : ' + money(result.tcoNetApresIk)));
+      rect.appendChild(svgElement('title', {}, resultTitle(result) + ' : ' + money(result.tcoNetApresIk)));
       svg.appendChild(rect);
       svg.appendChild(svgElement('text', {
         x: valueX + (result.tcoNetApresIk < 0 ? -8 : 8), y: y + 18,
@@ -77,20 +104,21 @@
     });
     svg.appendChild(svgElement('text', { x: left, y: height - 12, class: 'chart-note' }, 'Valeurs négatives possibles lorsque la reprise et les IK dépassent les coûts.'));
     container.setAttribute('aria-label', 'TCO net après reprise et IK : ' + results.map(function (r) {
-      return r.name + ', ' + money(r.tcoNetApresIk);
+      return resultTitle(r) + ', ' + money(r.tcoNetApresIk);
     }).join(' ; '));
   }
 
   function renderCumulativeTcoChart(container, allResults) {
     const results = (allResults || []).filter(function (result) { return result.includeInCharts; });
     const width = 900;
-    const height = 410;
+    const layout = calculateSeriesChartLayout(results.length);
+    const height = layout.height;
     const svg = setup(container, width, height, results.length ? '' : 'Aucun scénario inclus');
     if (!results.length) return;
     const left = 74;
     const right = 25;
-    const top = 30;
-    const bottom = 80;
+    const top = layout.top;
+    const bottom = layout.bottom;
     const values = [0];
     results.forEach(function (result) {
       values.push(result.fraisAchat + result.taxes - result.montantReprise);
@@ -112,9 +140,9 @@
       svg.appendChild(svgElement('text', { x: left - 10, y: tickY + 4, 'text-anchor': 'end', class: 'chart-tick' }, money(value)));
     }
     for (let year = 0; year <= maxYears; year += 1) {
-      svg.appendChild(svgElement('text', { x: x(year), y: height - bottom + 24, 'text-anchor': 'middle', class: 'chart-tick' }, String(year)));
+      svg.appendChild(svgElement('text', { x: x(year), y: layout.plotBottom + 24, 'text-anchor': 'middle', class: 'chart-tick' }, String(year)));
     }
-    svg.appendChild(svgElement('text', { x: (left + width - right) / 2, y: height - 30, 'text-anchor': 'middle', class: 'chart-note' }, 'Année'));
+    svg.appendChild(svgElement('text', { x: (left + width - right) / 2, y: layout.plotBottom + 48, 'text-anchor': 'middle', class: 'chart-note' }, 'Année'));
 
     results.forEach(function (result, index) {
       const points = [{ year: 0, tcoNet: result.fraisAchat + result.taxes - result.montantReprise }].concat(result.seriesAnnuelles);
@@ -127,26 +155,30 @@
       }));
       points.forEach(function (point) {
         const circle = svgElement('circle', { cx: x(point.year), cy: y(point.tcoNet), r: 4, fill: COLORS[index % COLORS.length] });
-        circle.appendChild(svgElement('title', {}, result.name + ' · an ' + point.year + ' : ' + money(point.tcoNet)));
+        circle.appendChild(svgElement('title', {}, resultTitle(result) + ' · an ' + point.year + ' : ' + money(point.tcoNet)));
         svg.appendChild(circle);
       });
-      const legendX = left + index * Math.min(220, (width - left - right) / Math.max(1, results.length));
-      svg.appendChild(svgElement('line', { x1: legendX, y1: height - 8, x2: legendX + 22, y2: height - 8, stroke: COLORS[index % COLORS.length], 'stroke-width': 4 }));
-      svg.appendChild(svgElement('text', { x: legendX + 28, y: height - 4, class: 'chart-label' }, shortName(result.name, 24)));
+      const legendX = left;
+      const legendY = layout.legendStartY + index * layout.legendRowHeight;
+      svg.appendChild(svgElement('line', { x1: legendX, y1: legendY - 4, x2: legendX + 22, y2: legendY - 4, stroke: COLORS[index % COLORS.length], 'stroke-width': 4 }));
+      const legend = svgElement('text', { x: legendX + 28, y: legendY, class: 'chart-label' }, resultTitle(result));
+      legend.appendChild(svgElement('title', {}, resultTitle(result)));
+      svg.appendChild(legend);
     });
-    container.setAttribute('aria-label', 'Évolution annuelle du TCO net pour ' + results.map(function (r) { return r.name; }).join(', '));
+    container.setAttribute('aria-label', 'Évolution annuelle du TCO net pour ' + results.map(function (r) { return resultTitle(r); }).join(', '));
   }
 
   function renderResidualValueChart(container, allResults) {
     const results = (allResults || []).filter(function (result) { return result.includeInCharts; });
     const width = 900;
-    const height = 410;
+    const layout = calculateSeriesChartLayout(results.length);
+    const height = layout.height;
     const svg = setup(container, width, height, results.length ? '' : 'Aucun scénario inclus');
     if (!results.length) return;
     const left = 74;
     const right = 25;
-    const top = 30;
-    const bottom = 80;
+    const top = layout.top;
+    const bottom = layout.bottom;
     const values = [];
     results.forEach(function (result) {
       values.push(result.assietteValeur);
@@ -164,9 +196,9 @@
       svg.appendChild(svgElement('text', { x: left - 10, y: tickY + 4, 'text-anchor': 'end', class: 'chart-tick' }, money(value)));
     }
     for (let year = 0; year <= maxYears; year += 1) {
-      svg.appendChild(svgElement('text', { x: x(year), y: height - bottom + 24, 'text-anchor': 'middle', class: 'chart-tick' }, String(year)));
+      svg.appendChild(svgElement('text', { x: x(year), y: layout.plotBottom + 24, 'text-anchor': 'middle', class: 'chart-tick' }, String(year)));
     }
-    svg.appendChild(svgElement('text', { x: (left + width - right) / 2, y: height - 30, 'text-anchor': 'middle', class: 'chart-note' }, 'Année de possession'));
+    svg.appendChild(svgElement('text', { x: (left + width - right) / 2, y: layout.plotBottom + 48, 'text-anchor': 'middle', class: 'chart-note' }, 'Année de possession'));
 
     results.forEach(function (result, index) {
       const points = [{ year: 0, valeurResiduelle: result.assietteValeur, age: result.ageAchat }].concat(result.seriesAnnuelles);
@@ -183,20 +215,23 @@
           fill: COLORS[index % COLORS.length]
         });
         const ageLabel = point.age === null || point.age === undefined ? '' : ' · âge ' + point.age + ' ans';
-        circle.appendChild(svgElement('title', {}, result.name + ' · an ' + point.year + ageLabel + ' : ' + money(point.valeurResiduelle)));
+        circle.appendChild(svgElement('title', {}, resultTitle(result) + ' · an ' + point.year + ageLabel + ' : ' + money(point.valeurResiduelle)));
         svg.appendChild(circle);
       });
-      const legendX = left + index * Math.min(220, (width - left - right) / Math.max(1, results.length));
-      svg.appendChild(svgElement('line', { x1: legendX, y1: height - 8, x2: legendX + 22, y2: height - 8, stroke: COLORS[index % COLORS.length], 'stroke-width': 4 }));
-      svg.appendChild(svgElement('text', { x: legendX + 28, y: height - 4, class: 'chart-label' }, shortName(result.name, 24)));
+      const legendX = left;
+      const legendY = layout.legendStartY + index * layout.legendRowHeight;
+      svg.appendChild(svgElement('line', { x1: legendX, y1: legendY - 4, x2: legendX + 22, y2: legendY - 4, stroke: COLORS[index % COLORS.length], 'stroke-width': 4 }));
+      const legend = svgElement('text', { x: legendX + 28, y: legendY, class: 'chart-label' }, resultTitle(result));
+      legend.appendChild(svgElement('title', {}, resultTitle(result)));
+      svg.appendChild(legend);
     });
     container.setAttribute('aria-label', 'Valeur résiduelle à l’horizon : ' + results.map(function (result) {
-      return result.name + ', ' + money(result.valeurResiduelle);
+      return resultTitle(result) + ', ' + money(result.valeurResiduelle);
     }).join(' ; '));
   }
 
   function calculateCostBreakdownGeometry(results, width) {
-    const labelWidth = 165;
+    const labelWidth = 250;
     const plotLeft = labelWidth + 10;
     const plotRight = width - 30;
     const plotWidth = plotRight - plotLeft;
@@ -227,7 +262,7 @@
     if (!results.length) return;
     const components = [
       ['Décote', 'coutDecote', '#176b87'], ['Frais + taxes', 'fees', '#64748b'],
-      ['Énergie', 'coutEnergieCumule', '#d97736'], ['Entretien', 'entretienCumule', '#2f855a'],
+      ['Énergie', 'coutEnergieCumule', '#d97736'], ['Entretien annuel & CT hors pneus', 'entretienCumule', '#2f855a'],
       ['Pneus', 'pneusCumule', '#6d5cae'], ['Assurance', 'assuranceCumule', '#be4b5e']
     ];
     const geometry = calculateCostBreakdownGeometry(results, width);
@@ -254,7 +289,11 @@
 
     results.forEach(function (result, row) {
       const y = 48 + row * 62;
-      svg.appendChild(svgElement('text', { x: geometry.labelWidth - 10, y: y + 17, 'text-anchor': 'end', class: 'chart-label' }, shortName(result.name, 22)));
+      const scenarioLabel = svgElement('text', {
+        x: geometry.labelWidth - 10, y: y + 17, 'text-anchor': 'end', class: 'chart-label'
+      }, shortName(resultTitle(result), 38));
+      scenarioLabel.appendChild(svgElement('title', {}, resultTitle(result)));
+      svg.appendChild(scenarioLabel);
       let deductionCursor = geometry.zeroX;
       [
         ['Reprise', result.montantReprise, '#0f766e'],
@@ -264,7 +303,7 @@
         deductionCursor -= segmentWidth;
         if (segmentWidth > 0) {
           const rect = svgElement('rect', { x: deductionCursor, y: y, width: segmentWidth, height: 24, fill: deduction[2], opacity: 0.82 });
-          rect.appendChild(svgElement('title', {}, deduction[0] + ' déduite : ' + money(deduction[1])));
+          rect.appendChild(svgElement('title', {}, resultTitle(result) + ' · ' + deduction[0] + ' déduite : ' + money(deduction[1])));
           svg.appendChild(rect);
         }
       });
@@ -274,7 +313,7 @@
         const segmentWidth = Math.max(0, Number(value) || 0) * geometry.scale;
         if (segmentWidth > 0) {
           const rect = svgElement('rect', { x: cursor, y: y, width: segmentWidth, height: 24, fill: component[2] });
-          rect.appendChild(svgElement('title', {}, component[0] + ' : ' + money(value)));
+          rect.appendChild(svgElement('title', {}, resultTitle(result) + ' · ' + component[0] + ' : ' + money(value)));
           svg.appendChild(rect);
         }
         cursor += segmentWidth;
@@ -286,7 +325,7 @@
       const netPoint = svgElement('circle', {
         cx: netX, cy: y + 12, r: 4, class: 'chart-net-point'
       });
-      netPoint.appendChild(svgElement('title', {}, 'Résultat net : ' + money(result.tcoNetApresIk)));
+      netPoint.appendChild(svgElement('title', {}, resultTitle(result) + ' · Résultat net : ' + money(result.tcoNetApresIk)));
       svg.appendChild(netPoint);
       const nearLeft = netX < geometry.plotLeft + 75;
       const nearRight = netX > geometry.plotRight - 75;
@@ -298,8 +337,8 @@
     const legendItems = [['Reprise', '', '#0f766e'], ['IK', '', '#334155']].concat(components)
       .concat([['Résultat net', '', '#17242b', 'net']]);
     legendItems.forEach(function (component, index) {
-      const legendX = 20 + (index % 5) * 172;
-      const legendY = height - 32 + Math.floor(index / 5) * 22;
+      const legendX = 20 + (index % 3) * 285;
+      const legendY = height - 54 + Math.floor(index / 3) * 22;
       if (component[3] === 'net') {
         svg.appendChild(svgElement('line', {
           x1: legendX + 6, y1: legendY - 12, x2: legendX + 6, y2: legendY + 2, class: 'chart-net-marker'
@@ -312,7 +351,8 @@
       }
       svg.appendChild(svgElement('text', { x: legendX + 18, y: legendY, class: 'chart-label' }, component[0]));
     });
-    container.setAttribute('aria-label', 'Décomposition à échelle commune des coûts bruts, reprises et IK déduites, avec position du résultat net par scénario');
+    container.setAttribute('aria-label', 'Décomposition à échelle commune des coûts bruts, reprises et IK déduites, avec position du résultat net pour ' +
+      results.map(function (result) { return resultTitle(result); }).join(' ; '));
   }
 
   TCO.charts = {
@@ -320,6 +360,7 @@
     renderCumulativeTcoChart: renderCumulativeTcoChart,
     renderResidualValueChart: renderResidualValueChart,
     renderCostBreakdownChart: renderCostBreakdownChart,
-    calculateCostBreakdownGeometry: calculateCostBreakdownGeometry
+    calculateCostBreakdownGeometry: calculateCostBreakdownGeometry,
+    calculateSeriesChartLayout: calculateSeriesChartLayout
   };
 }(window.TCO = window.TCO || {}));

@@ -14,6 +14,17 @@
     return Math.min(10, Math.max(1, Math.trunc(finite(settings.horizonKpi, 1))));
   }
 
+  function getScenarioDisplayTitle(scenario) {
+    const name = String(scenario.name || 'Sans nom');
+    const energy = scenario.energyType === 'electric' ? 'Électrique' : 'Thermique';
+    if (scenario.acquisitionStatus === 'new') return [name, energy, 'Neuf'].join(' · ');
+    const registrationYear = Math.trunc(finite(scenario.anneeMiseEnCirculation));
+    const purchaseMileage = nonNegative(scenario.kilometrageAchat);
+    const formattedYear = registrationYear > 0 ? String(registrationYear) : 'Année inconnue';
+    const formattedMileage = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(purchaseMileage);
+    return [name, energy, formattedYear, formattedMileage + ' km'].join(' · ');
+  }
+
   function calculateIkIndicators(settings) {
     const indicative = nonNegative(settings.kilometrageProRembourseIk) *
       nonNegative(settings.baremeIkActuel) * nonNegative(settings.coefficientPrudenceIk);
@@ -184,6 +195,7 @@
     return {
       scenarioId: scenario.id,
       name: scenario.name,
+      displayTitle: getScenarioDisplayTitle(scenario),
       energyType: scenario.energyType,
       includeInCharts: scenario.includeInCharts !== false,
       profileFound: Boolean(profile),
@@ -249,6 +261,7 @@
     calculateScenarioTco: calculateScenarioTco,
     calculateAllScenarios: calculateAllScenarios,
     getReferenceScenarioResult: getReferenceScenarioResult,
+    getScenarioDisplayTitle: getScenarioDisplayTitle,
     getHorizon: getHorizon
   };
 }(window.TCO = window.TCO || {}));

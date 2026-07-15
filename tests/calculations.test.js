@@ -32,9 +32,9 @@ function close(actual, expected, label) {
     { tcoBrut: 20000, montantReprise: 2000, ikRetenueCumulee: 3000 },
     { tcoBrut: 10000, montantReprise: 4000, ikRetenueCumulee: 6000 }
   ], 900);
-  close(geometry.plotWidth, 695, 'largeur utile du graphique de décomposition');
-  close(geometry.scale, 695 / 30000, 'échelle monétaire unique');
-  const expectedWidthFor1000 = 695 / 30;
+  close(geometry.plotWidth, 610, 'largeur utile du graphique de décomposition');
+  close(geometry.scale, 610 / 30000, 'échelle monétaire unique');
+  const expectedWidthFor1000 = 610 / 30;
   close(1000 * geometry.scale, expectedWidthFor1000, 'largeur de 1 000 € côté coûts');
   close(1000 * geometry.scale, expectedWidthFor1000, 'largeur de 1 000 € côté déductions');
   const gross = 20000;
@@ -46,6 +46,20 @@ function close(actual, expected, label) {
   close(netX, grossEnd - deductionWidth, 'position du résultat net sur la même échelle');
   assert.ok(geometry.zeroX >= geometry.plotLeft && geometry.zeroX <= geometry.plotRight, 'axe zéro dans la zone utile');
   assert.ok(netX >= geometry.plotLeft && netX <= geometry.plotRight, 'marqueur net dans la zone utile');
+}
+
+// Les graphiques en courbes réservent une ligne de légende distincte à chaque véhicule.
+{
+  const layout = TCO.charts.calculateSeriesChartLayout(3);
+  assert.equal(layout.plotHeight, 300, 'hauteur de tracé constante');
+  assert.equal(layout.plotBottom - layout.top, layout.plotHeight, 'zone de tracé préservée');
+  assert.equal(layout.legendRowHeight, 24, 'interligne des légendes');
+  const firstLegendY = layout.legendStartY;
+  const secondLegendY = layout.legendStartY + layout.legendRowHeight;
+  const lastLegendY = layout.legendStartY + 2 * layout.legendRowHeight;
+  assert.equal(secondLegendY - firstLegendY, 24, 'une ligne distincte par véhicule');
+  assert.ok(firstLegendY > layout.plotBottom, 'légendes sous la zone de tracé');
+  assert.ok(lastLegendY < layout.height, 'dernière légende visible dans le SVG');
 }
 function assertAnnualReconciliation(result, label) {
   const detail = result.decompositionAnnuelle;
@@ -124,6 +138,31 @@ assert.equal(state().settings.forcerIkIndicatives, false, 'forçage IK désactiv
   });
   assert.match(summary, /status-calculated">Calculé/);
   assert.match(summary, /calculated-summary-item/);
+
+  const usedTitle = TCO.ui.getScenarioHeaderTitle({
+    name: 'Grand Scenic', energyType: 'thermal', acquisitionStatus: 'used',
+    anneeMiseEnCirculation: 2019, prixAchatNet: 12499, kilometrageAchat: 139602
+  });
+  assert.equal(usedTitle, [
+    'Grand Scenic', 'Thermique', '2019', TCO.ui.formatNumber(139602, 0) + ' km'
+  ].join(' · '));
+  assert.equal(TCO.ui.getScenarioHeaderTitle({
+    name: 'Occasion sans année', energyType: 'thermal', acquisitionStatus: 'used', kilometrageAchat: 100000
+  }), ['Occasion sans année', 'Thermique', 'Année inconnue', TCO.ui.formatNumber(100000, 0) + ' km'].join(' · '));
+  assert.equal(TCO.ui.getScenarioHeaderTitle({
+    name: 'Model Y', energyType: 'electric', acquisitionStatus: 'new',
+    prixAchatNet: 45000, kilometrageAchat: 20
+  }), 'Model Y · Électrique · Neuf');
+
+  const titleState = state();
+  Object.assign(titleState.scenarios[0], {
+    name: 'Grand Scenic', energyType: 'thermal', acquisitionStatus: 'used',
+    anneeMiseEnCirculation: 2019, prixAchatNet: 12499, kilometrageAchat: 139602
+  });
+  const titleResult = TCO.calculations.calculateScenarioTco(
+    titleState.settings, titleState.scenarios[0], titleState.depreciationProfiles
+  );
+  assert.equal(titleResult.displayTitle, usedTitle, 'titre enrichi propagé dans le résultat calculé');
 }
 
 {
@@ -139,6 +178,22 @@ assert.equal(state().settings.forcerIkIndicatives, false, 'forçage IK désactiv
   assert.match(uiSource, /application: \{\s*title: 'Application aux scénarios'/);
   assert.doesNotMatch(uiSource, /id: 'scenario-application'/);
   assert.match(uiSource, /class="form-subsection"/);
+  assert.match(uiSource, /SCENARIO_HEADER_FIELDS = new Set/);
+  assert.match(uiSource, /'prixAchatNet', 'kilometrageAchat'/);
+  assert.match(uiSource, /getResultDisplayTitle\(result\)/);
+  assert.match(uiSource, /scenarioTextField\(scenario, 'name', 'Nom du véhicule'/);
+  assert.doesNotMatch(uiSource, /scenarioTextField\(scenario, 'name', 'Nom du scénario'/);
+  const identificationStart = uiSource.indexOf('const identificationFields');
+  const purchaseStart = uiSource.indexOf('const purchaseFields');
+  const purchaseMileageField = uiSource.indexOf("scenarioNumberField(scenario, 'kilometrageAchat'", identificationStart);
+  assert.ok(purchaseMileageField > identificationStart && purchaseMileageField < purchaseStart,
+    'kilométrage à l’achat rendu dans Identification');
+  assert.match(uiSource, /Entretien annuel & CT hors pneus/);
+
+  const chartsSource = fs.readFileSync(path.join(root, 'js/charts.js'), 'utf8');
+  assert.match(chartsSource, /function resultTitle\(result\)/);
+  assert.match(chartsSource, /result\.displayTitle \|\| result\.name/);
+  assert.match(chartsSource, /Entretien annuel & CT hors pneus/);
 
   const htmlSource = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   assert.match(htmlSource, /<details class="indicator-guide">/);
